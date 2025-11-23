@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 // نستورد الصفحات
 import SalesPage from "./pages/SalesPage";
@@ -21,8 +21,21 @@ function App() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-
   const [selectedSection, setSelectedSection] = useState("home");
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // أول ما يفتح الموقع نحاول نقرأ المستخدم من التخزين
+  useEffect(() => {
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setCurrentUser(parsed);
+      } catch (e) {
+        console.error("خطأ في قراءة المستخدم من التخزين", e);
+      }
+    }
+  }, []);
 
   const containerStyle = {
     maxWidth: "600px",
@@ -67,15 +80,29 @@ function App() {
     const user = USERS.find(
       (u) => u.username === username && u.password === password
     );
-    if (!user) setLoginError("❌ بيانات الدخول غير صحيحة");
-    else {
+    if (!user) {
+      setLoginError("❌ بيانات الدخول غير صحيحة");
+    } else {
       setCurrentUser(user);
       setUsername("");
       setPassword("");
       setLoginError("");
+
+      if (rememberMe) {
+        localStorage.setItem("currentUser", JSON.stringify(user));
+      } else {
+        localStorage.removeItem("currentUser");
+      }
     }
   };
 
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setSelectedSection("home");
+    localStorage.removeItem("currentUser");
+  };
+
+  // لو ما فيه مستخدم مسجّل → صفحة تسجيل الدخول
   if (!currentUser) {
     return (
       <div style={containerStyle}>
@@ -87,6 +114,7 @@ function App() {
             style={inputStyle}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
+            placeholder="مثال: admin أو emp1"
           />
 
           <label>كلمة المرور</label>
@@ -95,13 +123,35 @@ function App() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder="مثال: 1234"
           />
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginBottom: "10px",
+              marginTop: "4px",
+            }}
+          >
+            <input
+              id="rememberMe"
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            <label htmlFor="rememberMe" style={{ fontSize: "14px" }}>
+              تذكرني (لا تخرجني من الحساب في هذا الجهاز)
+            </label>
+          </div>
 
           {loginError && (
             <p style={{ color: "red", fontSize: "14px" }}>{loginError}</p>
           )}
 
           <button
+            type="submit"
             style={{
               width: "100%",
               padding: "12px",
@@ -120,15 +170,13 @@ function App() {
     );
   }
 
+  // لو المستخدم مسجّل → لوحة التحكم
   return (
     <div style={containerStyle}>
       <div style={{ textAlign: "left", marginBottom: "10px" }}>
         👤 {currentUser.displayName}
         <button
-          onClick={() => {
-            setCurrentUser(null);
-            setSelectedSection("home");
-          }}
+          onClick={handleLogout}
           style={{
             marginRight: "10px",
             padding: "4px 10px",
@@ -144,7 +192,7 @@ function App() {
 
       <h1>📊 لوحة التحكم</h1>
 
-      {/* المبيعات أولًا */}
+      {/* المبيعات أولاً */}
       <div
         style={selectedSection === "sales" ? activeCardStyle : cardStyle}
         onClick={() => setSelectedSection("sales")}
@@ -195,7 +243,7 @@ function App() {
         🧑‍💼 الموظفين والصلاحيات
       </div>
 
-      {/* عرض الصفحة */}
+      {/* عرض الصفحة حسب القسم */}
       <div style={{ marginTop: "25px", textAlign: "right" }}>
         {selectedSection === "sales" && <SalesPage />}
         {selectedSection === "inventory" && <InventoryPage />}
@@ -204,6 +252,9 @@ function App() {
         {selectedSection === "suppliers" && <SuppliersPage />}
         {selectedSection === "reports" && <ReportsPage />}
         {selectedSection === "employees" && <EmployeesPage />}
+        {selectedSection === "home" && (
+          <p>✨ اضغطي على أحد الأقسام بالأعلى لعرض تفاصيله.</p>
+        )}
       </div>
     </div>
   );
