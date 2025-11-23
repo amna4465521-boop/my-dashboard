@@ -1,8 +1,27 @@
-// src/App.js
 import React, { useState } from "react";
 
+// نستورد الصفحات
+import SalesPage from "./pages/SalesPage";
+import InventoryPage from "./pages/InventoryPage";
+import InvoicesPage from "./pages/InvoicesPage";
+import AccountsPage from "./pages/AccountsPage";
+import SuppliersPage from "./pages/SuppliersPage";
+import ReportsPage from "./pages/ReportsPage";
+import EmployeesPage from "./pages/EmployeesPage";
+
+// مؤقتًا: المستخدمين
+const USERS = [
+  { username: "admin", password: "1234", displayName: "المدير" },
+  { username: "emp1", password: "1111", displayName: "موظف ١" },
+  { username: "emp2", password: "2222", displayName: "موظف ٢" },
+];
+
 function App() {
-  // هنا نخزن القسم المختار
+  const [currentUser, setCurrentUser] = useState(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+
   const [selectedSection, setSelectedSection] = useState("home");
 
   const containerStyle = {
@@ -13,44 +32,132 @@ function App() {
     backgroundColor: "#f7f7f7",
     textAlign: "center",
     direction: "rtl",
-    fontFamily: "system-ui, sans-serif",
+    fontFamily: "system-ui",
   };
 
   const cardStyle = {
     cursor: "pointer",
     border: "1px solid #ddd",
-    padding: "14px 20px",
-    margin: "8px 0",
+    padding: "14px",
+    margin: "6px 0",
     borderRadius: "8px",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#fff",
     textAlign: "right",
+    fontSize: "18px",
   };
 
   const activeCardStyle = {
     ...cardStyle,
     borderColor: "#4b7bec",
-    backgroundColor: "#eef3ff",
+    background: "#eef3ff",
     fontWeight: "bold",
   };
 
+  const inputStyle = {
+    width: "100%",
+    padding: "10px",
+    margin: "8px 0",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+    textAlign: "right",
+  };
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const user = USERS.find(
+      (u) => u.username === username && u.password === password
+    );
+    if (!user) setLoginError("❌ بيانات الدخول غير صحيحة");
+    else {
+      setCurrentUser(user);
+      setUsername("");
+      setPassword("");
+      setLoginError("");
+    }
+  };
+
+  if (!currentUser) {
+    return (
+      <div style={containerStyle}>
+        <h1>تسجيل الدخول</h1>
+
+        <form onSubmit={handleLogin} style={{ textAlign: "right" }}>
+          <label>اسم المستخدم</label>
+          <input
+            style={inputStyle}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+
+          <label>كلمة المرور</label>
+          <input
+            style={inputStyle}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          {loginError && (
+            <p style={{ color: "red", fontSize: "14px" }}>{loginError}</p>
+          )}
+
+          <button
+            style={{
+              width: "100%",
+              padding: "12px",
+              background: "#4b7bec",
+              border: "none",
+              borderRadius: "6px",
+              color: "#fff",
+              fontSize: "17px",
+              cursor: "pointer",
+            }}
+          >
+            دخول
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div style={containerStyle}>
-      <h1>📊 لوحة التحكم</h1>
-      <p>اختر أحد الأقسام للبدء:</p>
-
-      {/* الأزرار الرئيسية */}
-      <div
-        style={selectedSection === "inventory" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("inventory")}
-      >
-        📦 الجرد
+      <div style={{ textAlign: "left", marginBottom: "10px" }}>
+        👤 {currentUser.displayName}
+        <button
+          onClick={() => {
+            setCurrentUser(null);
+            setSelectedSection("home");
+          }}
+          style={{
+            marginRight: "10px",
+            padding: "4px 10px",
+            borderRadius: "6px",
+            border: "1px solid #ccc",
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          خروج
+        </button>
       </div>
 
+      <h1>📊 لوحة التحكم</h1>
+
+      {/* المبيعات أولًا */}
       <div
         style={selectedSection === "sales" ? activeCardStyle : cardStyle}
         onClick={() => setSelectedSection("sales")}
       >
         🛒 المبيعات
+      </div>
+
+      {/* الجرد ثاني */}
+      <div
+        style={selectedSection === "inventory" ? activeCardStyle : cardStyle}
+        onClick={() => setSelectedSection("inventory")}
+      >
+        📦 الجرد
       </div>
 
       <div
@@ -88,60 +195,15 @@ function App() {
         🧑‍💼 الموظفين والصلاحيات
       </div>
 
-      {/* هنا المحتوى اللي يتغير حسب القسم المختار */}
-      <div style={{ marginTop: "30px", textAlign: "right" }}>
-        {selectedSection === "home" && (
-          <p>✨ اضغطي على أحد الأقسام بالأعلى لعرض تفاصيله.</p>
-        )}
-
-        {selectedSection === "inventory" && (
-          <>
-            <h2>📦 الجرد</h2>
-            <p>هنا لاحقًا بنضيف شاشة الجرد اليومي وحركة الأصناف وكرت الصنف.</p>
-          </>
-        )}
-
-        {selectedSection === "sales" && (
-          <>
-            <h2>🛒 المبيعات</h2>
-            <p>هنا بتكون واجهة المبيعات ومسح الباركود والفاتورة للعميل.</p>
-          </>
-        )}
-
-        {selectedSection === "invoices" && (
-          <>
-            <h2>🧾 الفواتير</h2>
-            <p>هنا فواتير المشتريات، المبيعات، الضريبية وغير الضريبية.</p>
-          </>
-        )}
-
-        {selectedSection === "accounts" && (
-          <>
-            <h2>💰 الحسابات</h2>
-            <p>هنا صندوق المحل، السلف، المصاريف التشغيلية، والمديونيات.</p>
-          </>
-        )}
-
-        {selectedSection === "suppliers" && (
-          <>
-            <h2>🚚 الموردين والمندوبين</h2>
-            <p>إدارة الموردين، المندوبين، بياناتهم، وسندات استلام البضاعة.</p>
-          </>
-        )}
-
-        {selectedSection === "reports" && (
-          <>
-            <h2>📑 التقارير</h2>
-            <p>تقارير المبيعات، المشتريات، الشبكات، صافي الربح وغيرها.</p>
-          </>
-        )}
-
-        {selectedSection === "employees" && (
-          <>
-            <h2>🧑‍💼 الموظفين والصلاحيات</h2>
-            <p>حسابات الموظفين، الصلاحيات، وتتبع ما يفعله كل موظف.</p>
-          </>
-        )}
+      {/* عرض الصفحة */}
+      <div style={{ marginTop: "25px", textAlign: "right" }}>
+        {selectedSection === "sales" && <SalesPage />}
+        {selectedSection === "inventory" && <InventoryPage />}
+        {selectedSection === "invoices" && <InvoicesPage />}
+        {selectedSection === "accounts" && <AccountsPage />}
+        {selectedSection === "suppliers" && <SuppliersPage />}
+        {selectedSection === "reports" && <ReportsPage />}
+        {selectedSection === "employees" && <EmployeesPage />}
       </div>
     </div>
   );
