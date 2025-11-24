@@ -1,8 +1,12 @@
-export function ReportsPage() {
+import React from "react";
+
+function ReportsPage() {
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>📑 صفحة التقارير</h2>
-      <p>تقارير المبيعات – المشتريات – الشبكات – الجرد – صافي الربح.</p>
+    <div style={{ direction: "rtl", textAlign: "right" }}>
+      <h2>📑 التقارير</h2>
+      <p>لاحقًا نضيف تقارير المبيعات، المشتريات، الأرباح، الجرد، وغيرها.</p>
     </div>
   );
 }
+
+export default ReportsPage;

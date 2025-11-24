@@ -1,8 +1,12 @@
-export function SuppliersPage() {
+import React from "react";
+
+function SuppliersPage() {
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>🚚 صفحة الموردين والمندوبين</h2>
-      <p>بيانات الشركات – المناديب – سندات استلام البضاعة.</p>
+    <div style={{ direction: "rtl", textAlign: "right" }}>
+      <h2>🚚 الموردين والمندوبين</h2>
+      <p>لاحقًا نضيف هنا إدارة الموردين وربطهم بالأصناف وفواتير المشتريات.</p>
     </div>
   );
 }
+
+export default SuppliersPage;

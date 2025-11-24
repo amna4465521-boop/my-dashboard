@@ -1,7 +1,9 @@
+// src/App.js
 import React, { useState, useEffect } from "react";
 
-// نستورد الصفحات
+// الصفحات
 import SalesPage from "./pages/SalesPage";
+import DailyCollectionPage from "./pages/DailyCollectionPage";
 import InventoryPage from "./pages/InventoryPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import AccountsPage from "./pages/AccountsPage";
@@ -9,22 +11,86 @@ import SuppliersPage from "./pages/SuppliersPage";
 import ReportsPage from "./pages/ReportsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 
-// مؤقتًا: المستخدمين
+// 👤 المستخدمين (حسابات الدخول)
 const USERS = [
-  { username: "admin", password: "1234", displayName: "المدير" },
-  { username: "emp1", password: "1111", displayName: "موظف ١" },
-  { username: "emp2", password: "2222", displayName: "موظف ٢" },
+  { username: "N1", password: "12345", displayName: "نجيب" },
+  { username: "D1", password: "12345", displayName: "دارس" },
+  { username: "A1", password: "12345", displayName: "تجربة" },
 ];
+
+// 🎨 تنسيقات عامة
+const pageWrapperStyle = {
+  minHeight: "100vh",
+  margin: 0,
+  padding: "30px 10px",
+  background: "linear-gradient(135deg, #0f172a, #1e293b)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const containerStyle = {
+  width: "100%",
+  maxWidth: "900px",
+  margin: "0 auto",
+  padding: "24px 28px",
+  borderRadius: "18px",
+  backgroundColor: "#f9fafb",
+  boxShadow: "0 18px 45px rgba(15, 23, 42, 0.35)",
+  direction: "rtl",
+  fontFamily:
+    "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+};
+
+const sectionsGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+  gap: "10px",
+  marginTop: "15px",
+};
+
+const cardStyle = {
+  cursor: "pointer",
+  border: "1px solid #e5e7eb",
+  padding: "14px 16px",
+  borderRadius: "12px",
+  backgroundColor: "#ffffff",
+  textAlign: "right",
+  fontSize: "16px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  transition: "all 0.18s ease",
+};
+
+const activeCardStyle = {
+  ...cardStyle,
+  borderColor: "#4b7bec",
+  background: "linear-gradient(135deg, #eef2ff, #e0f2fe)",
+  boxShadow: "0 8px 20px rgba(59, 130, 246, 0.35)",
+  fontWeight: "600",
+};
+
+const inputStyle = {
+  width: "100%",
+  padding: "10px 12px",
+  margin: "6px 0 10px 0",
+  borderRadius: "8px",
+  border: "1px solid #d1d5db",
+  backgroundColor: "#ffffff",
+  textAlign: "right",
+  fontSize: "14px",
+};
 
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
-  const [selectedSection, setSelectedSection] = useState("home");
+  const [selectedSection, setSelectedSection] = useState("sales");
   const [rememberMe, setRememberMe] = useState(false);
 
-  // أول ما يفتح الموقع نحاول نقرأ المستخدم من التخزين
+  // أول ما يفتح الموقع نحاول نقرأ المستخدم من التخزين (تذكرني)
   useEffect(() => {
     const savedUser = localStorage.getItem("currentUser");
     if (savedUser) {
@@ -36,44 +102,6 @@ function App() {
       }
     }
   }, []);
-
-  const containerStyle = {
-    maxWidth: "600px",
-    margin: "40px auto",
-    padding: "20px",
-    borderRadius: "12px",
-    backgroundColor: "#f7f7f7",
-    textAlign: "center",
-    direction: "rtl",
-    fontFamily: "system-ui",
-  };
-
-  const cardStyle = {
-    cursor: "pointer",
-    border: "1px solid #ddd",
-    padding: "14px",
-    margin: "6px 0",
-    borderRadius: "8px",
-    backgroundColor: "#fff",
-    textAlign: "right",
-    fontSize: "18px",
-  };
-
-  const activeCardStyle = {
-    ...cardStyle,
-    borderColor: "#4b7bec",
-    background: "#eef3ff",
-    fontWeight: "bold",
-  };
-
-  const inputStyle = {
-    width: "100%",
-    padding: "10px",
-    margin: "8px 0",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-    textAlign: "right",
-  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -98,163 +126,203 @@ function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setSelectedSection("home");
+    setSelectedSection("sales");
     localStorage.removeItem("currentUser");
   };
 
-  // لو ما فيه مستخدم مسجّل → صفحة تسجيل الدخول
+  // لو مو مسجل دخول → صفحة الدخول
   if (!currentUser) {
     return (
-      <div style={containerStyle}>
-        <h1>تسجيل الدخول</h1>
+      <div style={pageWrapperStyle}>
+        <div style={containerStyle}>
+          <h1 style={{ textAlign: "center", marginBottom: "10px" }}>
+            تسجيل الدخول
+          </h1>
 
-        <form onSubmit={handleLogin} style={{ textAlign: "right" }}>
-          <label>اسم المستخدم</label>
-          <input
-            style={inputStyle}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="مثال: admin أو emp1"
-          />
-
-          <label>كلمة المرور</label>
-          <input
-            style={inputStyle}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="مثال: 1234"
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              marginBottom: "10px",
-              marginTop: "4px",
-            }}
-          >
+          <form onSubmit={handleLogin} style={{ textAlign: "right" }}>
+            <label>اسم المستخدم</label>
             <input
-              id="rememberMe"
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
+              style={inputStyle}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="مثال: N1 أو D1 أو A1"
             />
-            <label htmlFor="rememberMe" style={{ fontSize: "14px" }}>
-              تذكرني (لا تخرجني من الحساب في هذا الجهاز)
-            </label>
-          </div>
 
-          {loginError && (
-            <p style={{ color: "red", fontSize: "14px" }}>{loginError}</p>
-          )}
+            <label>كلمة المرور</label>
+            <input
+              style={inputStyle}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="مثال: 12345"
+            />
 
-          <button
-            type="submit"
-            style={{
-              width: "100%",
-              padding: "12px",
-              background: "#4b7bec",
-              border: "none",
-              borderRadius: "6px",
-              color: "#fff",
-              fontSize: "17px",
-              cursor: "pointer",
-            }}
-          >
-            دخول
-          </button>
-        </form>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                marginBottom: "10px",
+                marginTop: "4px",
+              }}
+            >
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+              />
+              <label htmlFor="rememberMe" style={{ fontSize: "14px" }}>
+                تذكرني (لا تخرجني من الحساب في هذا الجهاز)
+              </label>
+            </div>
+
+            {loginError && (
+              <p style={{ color: "red", fontSize: "14px" }}>{loginError}</p>
+            )}
+
+            <button
+              type="submit"
+              style={{
+                width: "100%",
+                padding: "12px",
+                background: "#4b7bec",
+                border: "none",
+                borderRadius: "8px",
+                color: "#fff",
+                fontSize: "17px",
+                cursor: "pointer",
+              }}
+            >
+              دخول
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
 
-  // لو المستخدم مسجّل → لوحة التحكم
+  // بعد تسجيل الدخول → لوحة التحكم
   return (
-    <div style={containerStyle}>
-      <div style={{ textAlign: "left", marginBottom: "10px" }}>
-        👤 {currentUser.displayName}
-        <button
-          onClick={handleLogout}
+    <div style={pageWrapperStyle}>
+      <div style={containerStyle}>
+        {/* شريط علوي */}
+        <div
           style={{
-            marginRight: "10px",
-            padding: "4px 10px",
-            borderRadius: "6px",
-            border: "1px solid #ccc",
-            background: "#fff",
-            cursor: "pointer",
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: "10px",
+            alignItems: "center",
           }}
         >
-          خروج
-        </button>
-      </div>
+          <div>
+            👤 {currentUser.displayName}
+            <span style={{ fontSize: "12px", color: "#6b7280", marginRight: 6 }}>
+              ({currentUser.username})
+            </span>
+          </div>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "4px 10px",
+              borderRadius: "6px",
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            خروج
+          </button>
+        </div>
 
-      <h1>📊 لوحة التحكم</h1>
+        <h1 style={{ marginBottom: "6px" }}>📊 لوحة التحكم</h1>
+        <p style={{ marginBottom: "15px", fontSize: "14px", color: "#4b5563" }}>
+          اختاري أحد الأقسام لبدء العمل.
+        </p>
 
-      {/* المبيعات أولاً */}
-      <div
-        style={selectedSection === "sales" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("sales")}
-      >
-        🛒 المبيعات
-      </div>
+        {/* الأقسام الرئيسية بالترتيب اللي اتفقنا عليه */}
+        <div style={sectionsGridStyle}>
+          {/* 1) المبيعات */}
+          <div
+            style={selectedSection === "sales" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("sales")}
+          >
+            <span>🛒 المبيعات</span>
+          </div>
 
-      {/* الجرد ثاني */}
-      <div
-        style={selectedSection === "inventory" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("inventory")}
-      >
-        📦 الجرد
-      </div>
+          {/* 2) التحصيل اليومي */}
+          <div
+            style={
+              selectedSection === "dailyCollection"
+                ? activeCardStyle
+                : cardStyle
+            }
+            onClick={() => setSelectedSection("dailyCollection")}
+          >
+            <span>💳 التحصيل اليومي</span>
+          </div>
 
-      <div
-        style={selectedSection === "invoices" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("invoices")}
-      >
-        🧾 الفواتير
-      </div>
+          {/* 3) الجرد */}
+          <div
+            style={selectedSection === "inventory" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("inventory")}
+          >
+            <span>📦 الجرد / المخزون</span>
+          </div>
 
-      <div
-        style={selectedSection === "accounts" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("accounts")}
-      >
-        💰 الحسابات
-      </div>
+          {/* 4) الفواتير */}
+          <div
+            style={selectedSection === "invoices" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("invoices")}
+          >
+            <span>🧾 الفواتير</span>
+          </div>
 
-      <div
-        style={selectedSection === "suppliers" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("suppliers")}
-      >
-        🚚 الموردين والمندوبين
-      </div>
+          {/* 5) الموردين والمندوبين */}
+          <div
+            style={selectedSection === "suppliers" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("suppliers")}
+          >
+            <span>🚚 الموردين والمندوبين</span>
+          </div>
 
-      <div
-        style={selectedSection === "reports" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("reports")}
-      >
-        📑 التقارير
-      </div>
+          {/* 6) الحسابات */}
+          <div
+            style={selectedSection === "accounts" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("accounts")}
+          >
+            <span>💰 الحسابات</span>
+          </div>
 
-      <div
-        style={selectedSection === "employees" ? activeCardStyle : cardStyle}
-        onClick={() => setSelectedSection("employees")}
-      >
-        🧑‍💼 الموظفين والصلاحيات
-      </div>
+          {/* 7) التقارير */}
+          <div
+            style={selectedSection === "reports" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("reports")}
+          >
+            <span>📑 التقارير</span>
+          </div>
 
-      {/* عرض الصفحة حسب القسم */}
-      <div style={{ marginTop: "25px", textAlign: "right" }}>
-        {selectedSection === "sales" && <SalesPage />}
-        {selectedSection === "inventory" && <InventoryPage />}
-        {selectedSection === "invoices" && <InvoicesPage />}
-        {selectedSection === "accounts" && <AccountsPage />}
-        {selectedSection === "suppliers" && <SuppliersPage />}
-        {selectedSection === "reports" && <ReportsPage />}
-        {selectedSection === "employees" && <EmployeesPage />}
-        {selectedSection === "home" && (
-          <p>✨ اضغطي على أحد الأقسام بالأعلى لعرض تفاصيله.</p>
-        )}
+          {/* 8) الموظفين والصلاحيات */}
+          <div
+            style={selectedSection === "employees" ? activeCardStyle : cardStyle}
+            onClick={() => setSelectedSection("employees")}
+          >
+            <span>🧑‍💼 الموظفين والصلاحيات</span>
+          </div>
+        </div>
+
+        {/* عرض محتوى الصفحة المختارة */}
+        <div style={{ marginTop: "25px" }}>
+          {selectedSection === "sales" && <SalesPage />}
+          {selectedSection === "dailyCollection" && <DailyCollectionPage />}
+          {selectedSection === "inventory" && <InventoryPage />}
+          {selectedSection === "invoices" && <InvoicesPage />}
+          {selectedSection === "suppliers" && <SuppliersPage />}
+          {selectedSection === "accounts" && <AccountsPage />}
+          {selectedSection === "reports" && <ReportsPage />}
+          {selectedSection === "employees" && <EmployeesPage />}
+        </div>
       </div>
     </div>
   );

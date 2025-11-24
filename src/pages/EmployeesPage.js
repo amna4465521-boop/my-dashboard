@@ -1,8 +1,12 @@
-export function EmployeesPage() {
+import React from "react";
+
+function EmployeesPage() {
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>👤 صفحة الموظفين والصلاحيات</h2>
-      <p>إنشاء حساب موظف – الصلاحيات – سجل الدخول.</p>
+    <div style={{ direction: "rtl", textAlign: "right" }}>
+      <h2>🧑‍💼 الموظفين والصلاحيات</h2>
+      <p>سيتم لاحقًا إضافة صلاحيات لكل مستخدم (نجيب، دارس، تجربة...)</p>
     </div>
   );
 }
+
+export default EmployeesPage;

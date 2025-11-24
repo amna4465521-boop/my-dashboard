@@ -1,8 +1,12 @@
-export function InvoicesPage() {
+import React from "react";
+
+function InvoicesPage() {
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>🧾 صفحة الفواتير</h2>
-      <p>فواتير المشتريات، المبيعات، الضريبية وغير الضريبية.</p>
+    <div style={{ direction: "rtl", textAlign: "right" }}>
+      <h2>🧾 الفواتير</h2>
+      <p>هنا ستكون فواتير المبيعات والمشتريات والتفاصيل الضريبية.</p>
     </div>
   );
 }
+
+export default InvoicesPage;
