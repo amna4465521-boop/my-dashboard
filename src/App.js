@@ -20,7 +20,8 @@ const USERS = [
   { username: "A1", password: "12345", displayName: "تجربة", role: "admin" },
 ];
 
-// ***************  ستايلات عامة  ***************
+// ****** ستايلات أساسية ******
+
 const containerStyle = {
   maxWidth: "1200px",
   margin: "20px auto",
@@ -36,7 +37,6 @@ const containerStyle = {
 
 const loginCardStyle = {
   maxWidth: "420px",
-  width: "100%",
   margin: "0 auto",
   padding: "24px 20px",
   borderRadius: "16px",
@@ -114,6 +114,7 @@ const sectionButton = {
   backgroundColor: "#f9fafb",
   fontSize: "14px",
   textAlign: "right",
+  whiteSpace: "nowrap",
 };
 
 const sectionButtonActive = {
@@ -126,6 +127,7 @@ const sectionButtonActive = {
 
 const mainAreaStyle = {
   flex: 1,
+  marginRight: "16px",
   padding: "12px",
   borderRadius: "14px",
   backgroundColor: "#ffffff",
@@ -141,8 +143,6 @@ const topBarStyle = {
   marginBottom: "12px",
 };
 
-// **********************************************
-
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedSection, setSelectedSection] = useState("sales");
@@ -151,7 +151,7 @@ function App() {
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState("");
   const [isMobile, setIsMobile] = useState(
-    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+    typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
 
   // قراءة المستخدم من localStorage
@@ -167,10 +167,10 @@ function App() {
     }
   }, []);
 
-  // مراقبة حجم الشاشة (لأجل الجوال)
+  // متابعة حجم الشاشة (جوال / لابتوب)
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
+      setIsMobile(window.innerWidth < 768);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -201,24 +201,71 @@ function App() {
     localStorage.removeItem("currentUser_sky");
   };
 
-  // *************** شاشة تسجيل الدخول ***************
+  // الأقسام
+  const sections = [
+    { key: "sales", label: "🛒 المبيعات" },
+    { key: "dailyCollection", label: "💳 التحصيل اليومي" },
+    { key: "inventory", label: "📦 الجرد" },
+    { key: "invoices", label: "🧾 الفواتير" },
+    { key: "suppliers", label: "🚚 الموردين والمندوبين" },
+    { key: "accounts", label: "💰 الحسابات" },
+    { key: "reports", label: "📑 التقارير" },
+    { key: "ledger", label: "📚 دفتر أستاذ" },
+    { key: "employees", label: "🧑‍💼 الموظفين والصلاحيات" },
+  ];
+
+  const renderSection = () => {
+    switch (selectedSection) {
+      case "sales":
+        return <SalesPage currentUser={currentUser} />;
+      case "dailyCollection":
+        return <DailyCollectionPage currentUser={currentUser} />;
+      case "inventory":
+        return <InventoryPage />;
+      case "invoices":
+        return <InvoicesPage />;
+      case "suppliers":
+        return <SuppliersPage />;
+      case "accounts":
+        return <AccountsPage />;
+      case "reports":
+        return <ReportsPage />;
+      case "employees":
+        return <EmployeesPage isAdmin={currentUser?.role === "admin"} />;
+      case "ledger":
+        return <LedgerPage />;
+      default:
+        return <SalesPage currentUser={currentUser} />;
+    }
+  };
+
+  // شاشة تسجيل الدخول
   if (!currentUser) {
     return (
       <div
         style={{
           ...containerStyle,
           maxWidth: "100%",
+          minHeight: "100vh",
+          margin: 0,
+          borderRadius: 0,
           background: "#0f172a",
           boxShadow: "none",
-          minHeight: "100vh",
           display: "flex",
-          justifyContent: "center",
           alignItems: "center",
+          justifyContent: "center",
         }}
       >
         <div style={loginCardStyle}>
-          <h1 style={{ marginTop: 0, marginBottom: "6px", fontSize: "22px" }}>
-            Sky Dashboard
+          <h1
+            style={{
+              marginTop: 0,
+              marginBottom: "6px",
+              fontSize: "22px",
+              fontWeight: 700,
+            }}
+          >
+            مون داشبورد
           </h1>
           <p
             style={{
@@ -280,77 +327,8 @@ function App() {
     );
   }
 
-  // *************** بعد تسجيل الدخول ***************
-
-  // الأقسام
-  const sections = [
-    { key: "sales", label: "🛒 المبيعات" },
-    { key: "dailyCollection", label: "💳 التحصيل اليومي" },
-    { key: "inventory", label: "📦 الجرد" },
-    { key: "invoices", label: "🧾 الفواتير" },
-    { key: "suppliers", label: "🚚 الموردين والمندوبين" },
-    { key: "accounts", label: "💰 الحسابات" },
-    { key: "reports", label: "📑 التقارير" },
-    { key: "ledger", label: "📚 دفتر أستاذ" },
-    { key: "employees", label: "🧑‍💼 الموظفين والصلاحيات" },
-  ];
-
-  const isAdmin = currentUser?.role === "admin";
-
-  const renderSection = () => {
-    switch (selectedSection) {
-      case "sales":
-        return <SalesPage currentUser={currentUser} />;
-      case "dailyCollection":
-        return <DailyCollectionPage currentUser={currentUser} />;
-      case "inventory":
-        return <InventoryPage />;
-      case "invoices":
-        return <InvoicesPage />;
-      case "suppliers":
-        return <SuppliersPage />;
-      case "accounts":
-        return <AccountsPage />;
-      case "reports":
-        return <ReportsPage />;
-      case "employees":
-        return <EmployeesPage isAdmin={isAdmin} />;
-      case "ledger":
-        return <LedgerPage />;
-      default:
-        return <SalesPage currentUser={currentUser} />;
-    }
-  };
-
-  const renderSectionButtons = () => (
-    <div>
-      <div
-        style={{
-          fontSize: "13px",
-          color: "#6b7280",
-          marginBottom: "8px",
-        }}
-      >
-        الأقسام الرئيسية
-      </div>
-      {sections.map((sec) => {
-        // مثال بسيط: قسم الحسابات والموظفين للمدير فقط
-        if (!isAdmin && (sec.key === "accounts" || sec.key === "employees")) {
-          return null;
-        }
-        const isActive = selectedSection === sec.key;
-        return (
-          <div
-            key={sec.key}
-            onClick={() => setSelectedSection(sec.key)}
-            style={isActive ? sectionButtonActive : sectionButton}
-          >
-            {sec.label}
-          </div>
-        );
-      })}
-    </div>
-  );
+  // بعد تسجيل الدخول
+  const isAdmin = currentUser.role === "admin";
 
   return (
     <div style={containerStyle}>
@@ -386,21 +364,50 @@ function App() {
         </div>
       </div>
 
-      {/* المحتوى الرئيسي */}
+      {/* ******** شكل الجوال ******** */}
       {isMobile ? (
-        // ********** شكل الجوال: صفحة وحدة **********
         <>
+          {/* شريط الأقسام كـ تبويبات أفقية */}
           <div
             style={{
-              ...sidebarStyle,
-              width: "100%",
-              marginBottom: "12px",
+              marginBottom: "10px",
+              paddingBottom: "4px",
+              overflowX: "auto",
             }}
           >
-            {renderSectionButtons()}
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                minWidth: "100%",
+              }}
+            >
+              {sections.map((sec) => {
+                if (
+                  !isAdmin &&
+                  (sec.key === "accounts" || sec.key === "employees")
+                ) {
+                  return null;
+                }
+                const active = selectedSection === sec.key;
+                return (
+                  <div
+                    key={sec.key}
+                    onClick={() => setSelectedSection(sec.key)}
+                    style={{
+                      ...(active ? sectionButtonActive : sectionButton),
+                      marginBottom: 0,
+                    }}
+                  >
+                    {sec.label}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div style={mainAreaStyle}>
+          {/* محتوى الصفحة فقط (بدون قائمة جانبية) */}
+          <div style={{ ...mainAreaStyle, marginRight: 0 }}>
             <div style={topBarStyle}>
               <h2 style={{ margin: 0, fontSize: "18px" }}>
                 {sections.find((s) => s.key === selectedSection)?.label ||
@@ -414,10 +421,38 @@ function App() {
           </div>
         </>
       ) : (
-        // ********** شكل اللابتوب / الآيباد: عمودين **********
+        /* ******** شكل اللابتوب / الايباد ******** */
         <div style={{ display: "flex", gap: "12px" }}>
           {/* القائمة الجانبية */}
-          <div style={sidebarStyle}>{renderSectionButtons()}</div>
+          <div style={sidebarStyle}>
+            <div
+              style={{
+                fontSize: "13px",
+                color: "#6b7280",
+                marginBottom: "8px",
+              }}
+            >
+              الأقسام الرئيسية
+            </div>
+            {sections.map((sec) => {
+              if (
+                !isAdmin &&
+                (sec.key === "accounts" || sec.key === "employees")
+              ) {
+                return null;
+              }
+              const active = selectedSection === sec.key;
+              return (
+                <div
+                  key={sec.key}
+                  onClick={() => setSelectedSection(sec.key)}
+                  style={active ? sectionButtonActive : sectionButton}
+                >
+                  {sec.label}
+                </div>
+              );
+            })}
+          </div>
 
           {/* منطقة المحتوى */}
           <div style={mainAreaStyle}>
@@ -426,9 +461,9 @@ function App() {
                 {sections.find((s) => s.key === selectedSection)?.label ||
                   "لوحة التحكم"}
               </h2>
-              <div style={{ fontSize: "12px", color: "#6b7280" }}>
-                النظام داخلي لإدارة محل الشيش والمعسلات والجرد والحسابات.
-              </div>
+            </div>
+            <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: 8 }}>
+              النظام داخلي لإدارة محل الشيش والمعسلات والجرد والحسابات.
             </div>
             <div>{renderSection()}</div>
           </div>
