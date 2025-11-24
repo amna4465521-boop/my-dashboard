@@ -127,4 +127,30 @@
   .app-main-sidebar > div > div {
     min-width: 120px; /* عرض الكرت في الجوال */
   }
+}/* إخفاء القائمة الجانبية بالجوال */
+@media (max-width: 768px) {
+  .app-main {
+    flex-direction: column;
+  }
+
+  .app-main-sidebar {
+    display: none !important;
+  }
+
+  .app-main-content {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* تصغير المسافات */
+  .app-header {
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  .app-logo-box {
+    justify-content: center;
+  }
 }
