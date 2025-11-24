@@ -1,3 +1,4 @@
+// src/App.js
 import React, { useState, useEffect } from "react";
 import "./App.css";
 
@@ -19,6 +20,7 @@ const USERS = [
   { username: "A1", password: "12345", displayName: "تجربة", role: "admin" },
 ];
 
+// ***************  ستايلات عامة  ***************
 const containerStyle = {
   maxWidth: "1200px",
   margin: "20px auto",
@@ -29,16 +31,19 @@ const containerStyle = {
   direction: "rtl",
   color: "#111827",
   boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)",
+  boxSizing: "border-box",
 };
 
 const loginCardStyle = {
   maxWidth: "420px",
-  margin: "80px auto",
+  width: "100%",
+  margin: "0 auto",
   padding: "24px 20px",
   borderRadius: "16px",
   backgroundColor: "#ffffff",
   textAlign: "right",
   boxShadow: "0 10px 25px rgba(15, 23, 42, 0.15)",
+  boxSizing: "border-box",
 };
 
 const inputStyle = {
@@ -121,7 +126,6 @@ const sectionButtonActive = {
 
 const mainAreaStyle = {
   flex: 1,
-  marginRight: "16px",
   padding: "12px",
   borderRadius: "14px",
   backgroundColor: "#ffffff",
@@ -137,6 +141,8 @@ const topBarStyle = {
   marginBottom: "12px",
 };
 
+// **********************************************
+
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedSection, setSelectedSection] = useState("sales");
@@ -144,6 +150,9 @@ function App() {
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState("");
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  );
 
   // قراءة المستخدم من localStorage
   useEffect(() => {
@@ -156,6 +165,15 @@ function App() {
         console.error("خطأ في قراءة المستخدم المحفوظ", e);
       }
     }
+  }, []);
+
+  // مراقبة حجم الشاشة (لأجل الجوال)
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const handleLogin = (e) => {
@@ -183,10 +201,21 @@ function App() {
     localStorage.removeItem("currentUser_sky");
   };
 
-  // شاشة تسجيل الدخول
+  // *************** شاشة تسجيل الدخول ***************
   if (!currentUser) {
     return (
-      <div style={{ ...containerStyle, boxShadow: "none", background: "#0f172a" }}>
+      <div
+        style={{
+          ...containerStyle,
+          maxWidth: "100%",
+          background: "#0f172a",
+          boxShadow: "none",
+          minHeight: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <div style={loginCardStyle}>
           <h1 style={{ marginTop: 0, marginBottom: "6px", fontSize: "22px" }}>
             Sky Dashboard
@@ -251,6 +280,8 @@ function App() {
     );
   }
 
+  // *************** بعد تسجيل الدخول ***************
+
   // الأقسام
   const sections = [
     { key: "sales", label: "🛒 المبيعات" },
@@ -264,7 +295,7 @@ function App() {
     { key: "employees", label: "🧑‍💼 الموظفين والصلاحيات" },
   ];
 
-  const isAdmin = currentUser.role === "admin";
+  const isAdmin = currentUser?.role === "admin";
 
   const renderSection = () => {
     switch (selectedSection) {
@@ -291,6 +322,36 @@ function App() {
     }
   };
 
+  const renderSectionButtons = () => (
+    <div>
+      <div
+        style={{
+          fontSize: "13px",
+          color: "#6b7280",
+          marginBottom: "8px",
+        }}
+      >
+        الأقسام الرئيسية
+      </div>
+      {sections.map((sec) => {
+        // مثال بسيط: قسم الحسابات والموظفين للمدير فقط
+        if (!isAdmin && (sec.key === "accounts" || sec.key === "employees")) {
+          return null;
+        }
+        const isActive = selectedSection === sec.key;
+        return (
+          <div
+            key={sec.key}
+            onClick={() => setSelectedSection(sec.key)}
+            style={isActive ? sectionButtonActive : sectionButton}
+          >
+            {sec.label}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div style={containerStyle}>
       {/* الهيدر العلوي */}
@@ -299,7 +360,7 @@ function App() {
           <div style={logoPlaceholder}>S</div>
           <div>
             <div style={{ fontWeight: 700, fontSize: "16px" }}>
-              Sky Dashboard
+              مون داشبورد
             </div>
             <div style={{ fontSize: "12px", color: "#6b7280" }}>
               مساحة مخصصة لشعار المحل (لوغو)
@@ -325,54 +386,54 @@ function App() {
         </div>
       </div>
 
-      {/* المحتوى */}
-      <div style={{ display: "flex", gap: "12px" }}>
-        {/* القائمة الجانبية */}
-        <div style={sidebarStyle}>
+      {/* المحتوى الرئيسي */}
+      {isMobile ? (
+        // ********** شكل الجوال: صفحة وحدة **********
+        <>
           <div
             style={{
-              fontSize: "13px",
-              color: "#6b7280",
-              marginBottom: "8px",
+              ...sidebarStyle,
+              width: "100%",
+              marginBottom: "12px",
             }}
           >
-            الأقسام الرئيسية
+            {renderSectionButtons()}
           </div>
-          {sections.map((sec) => {
-            // مثال بسيط: قسم الحسابات والموظفين للمدير فقط
-            if (!isAdmin && (sec.key === "accounts" || sec.key === "employees")) {
-              return null;
-            }
-            return (
-              <div
-                key={sec.key}
-                onClick={() => setSelectedSection(sec.key)}
-                style={
-                  selectedSection === sec.key
-                    ? sectionButtonActive
-                    : sectionButton
-                }
-              >
-                {sec.label}
-              </div>
-            );
-          })}
-        </div>
 
-        {/* منطقة المحتوى */}
-        <div style={mainAreaStyle}>
-          <div style={topBarStyle}>
-            <h2 style={{ margin: 0, fontSize: "18px" }}>
-              {sections.find((s) => s.key === selectedSection)?.label ||
-                "لوحة التحكم"}
-            </h2>
-            <div style={{ fontSize: "12px", color: "#6b7280" }}>
-              النظام داخلي لإدارة محل الشيش والمعسلات والجرد والحسابات.
+          <div style={mainAreaStyle}>
+            <div style={topBarStyle}>
+              <h2 style={{ margin: 0, fontSize: "18px" }}>
+                {sections.find((s) => s.key === selectedSection)?.label ||
+                  "لوحة التحكم"}
+              </h2>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                النظام داخلي لإدارة محل الشيش والمعسلات والجرد والحسابات.
+              </div>
             </div>
+            <div>{renderSection()}</div>
           </div>
-          <div>{renderSection()}</div>
+        </>
+      ) : (
+        // ********** شكل اللابتوب / الآيباد: عمودين **********
+        <div style={{ display: "flex", gap: "12px" }}>
+          {/* القائمة الجانبية */}
+          <div style={sidebarStyle}>{renderSectionButtons()}</div>
+
+          {/* منطقة المحتوى */}
+          <div style={mainAreaStyle}>
+            <div style={topBarStyle}>
+              <h2 style={{ margin: 0, fontSize: "18px" }}>
+                {sections.find((s) => s.key === selectedSection)?.label ||
+                  "لوحة التحكم"}
+              </h2>
+              <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                النظام داخلي لإدارة محل الشيش والمعسلات والجرد والحسابات.
+              </div>
+            </div>
+            <div>{renderSection()}</div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
