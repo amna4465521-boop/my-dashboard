@@ -1,29 +1,24 @@
-// src/pages/InventoryPage.js
 import React, { useState, useEffect } from "react";
+import {
+  getInventoryItems,
+  setInventoryItems,
+} from "../services/storage";
 
 function InventoryPage() {
   const [items, setItems] = useState([]);
   const [bulkText, setBulkText] = useState("");
   const [preview, setPreview] = useState([]);
+  const [editingId, setEditingId] = useState(null);
 
-  // تحميل الأصناف من التخزين المحلي عند فتح الصفحة
   useEffect(() => {
-    const saved = localStorage.getItem("inventory_items");
-    if (saved) {
-      try {
-        setItems(JSON.parse(saved));
-      } catch (e) {
-        console.error("خطأ في قراءة المخزون من التخزين", e);
-      }
-    }
+    const saved = getInventoryItems();
+    setItems(saved);
   }, []);
 
-  // حفظ أي تغيير في الأصناف في التخزين المحلي
   useEffect(() => {
-    localStorage.setItem("inventory_items", JSON.stringify(items));
+    setInventoryItems(items);
   }, [items]);
 
-  // معاينة الإدخال الجماعي
   const handlePreview = () => {
     const lines = bulkText
       .split("\n")
@@ -33,128 +28,121 @@ function InventoryPage() {
     const parsed = [];
     let lineNumber = 0;
 
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
+    for (const line of lines) {
       lineNumber += 1;
-
       const parts = line.split(",").map((p) => p.trim());
-
-      // لازم يكون على الأقل "اسم , سعر"
       if (parts.length < 2) {
-        window.alert(
+        alert(
           "السطر رقم " +
             lineNumber +
-            " غير واضح. الصيغة المتوقعة: اسم الصنف , السعر شامل الضريبة , [الكمية اختياري]"
+            " غير واضح. الصيغة: اسم الصنف , السعر شامل الضريبة , [الكمية]"
         );
         return;
       }
-
       const name = parts[0];
-
-      // السعر مع الضريبة (نحذف كلمة ريال أو SAR لو موجودة)
-      const cleanedPrice = parts[1]
-        .replace("ريال", "")
-        .replace("SAR", "")
-        .trim();
-      const priceWithTax = parseFloat(cleanedPrice);
-
+      const priceWithTax = parseFloat(parts[1]);
       if (Number.isNaN(priceWithTax)) {
-        window.alert("السعر في السطر رقم " + lineNumber + " غير صحيح.");
+        alert("سعر غير صحيح في السطر " + lineNumber);
         return;
       }
-
-      // الكمية (اختيارية)
       let qty = 0;
-      if (parts.length >= 3 && parts[2] !== "") {
-        const parsedQty = parseFloat(parts[2]);
-        if (Number.isNaN(parsedQty)) {
-          window.alert("الكمية في السطر رقم " + lineNumber + " غير صحيحة.");
-          return;
+      if (parts.length >= 3) {
+        qty = parseFloat(parts[2]);
+        if (Number.isNaN(qty)) {
+          qty = 0;
         }
-        qty = parsedQty;
       }
-
-      // حساب السعر بدون ضريبة والضريبة (15%)
-      const priceWithoutTaxRaw = priceWithTax / 1.15;
-      const priceWithoutTax = parseFloat(priceWithoutTaxRaw.toFixed(2));
-      const vatRaw = priceWithTax - priceWithoutTax;
-      const vat = parseFloat(vatRaw.toFixed(2));
+      const priceWithoutTax = priceWithTax / 1.15;
+      const vat = priceWithTax - priceWithoutTax;
 
       parsed.push({
         tempId: lineNumber,
-        name: name,
-        priceWithTax: priceWithTax,
-        priceWithoutTax: priceWithoutTax,
-        vat: vat,
-        qty: qty,
+        name,
+        priceWithTax,
+        priceWithoutTax,
+        vat,
+        qty,
+        unit: "حبة",
+        category: "",
+        minPrice: priceWithTax * 0.7,
+        profitPercent: 30,
       });
     }
 
     setPreview(parsed);
   };
 
-  // حفظ الأصناف من المعاينة إلى المخزون
   const handleSaveAll = () => {
     if (preview.length === 0) {
-      window.alert("لا يوجد أصناف في المعاينة.");
+      alert("لا يوجد أصناف في المعاينة");
       return;
     }
-
     const existingCount = items.length;
     const now = Date.now();
-
     const newItems = preview.map((p, index) => {
       const codeNumber = existingCount + index + 1;
-
-      // كود الصنف: I0001, I0002, ...
-      const code =
-        "I" + codeNumber.toString().padStart(4, "0");
-
-      // باركود رقمي بسيط من 12 رقم
-      const fullNumber = (now + index).toString();
-      const last11 = fullNumber.slice(-11);
-      const barcode = "9" + last11;
+      const code = "I" + codeNumber.toString().padStart(4, "0");
+      const barcode = "9" + (now + index).toString().slice(-11);
 
       return {
         id: now + index,
-        code: code,
-        barcode: barcode,
+        code,
+        barcode,
         name: p.name,
         priceWithTax: p.priceWithTax,
         priceWithoutTax: p.priceWithoutTax,
         vat: p.vat,
         qty: p.qty,
+        unit: p.unit,
+        category: p.category,
+        minPrice: p.minPrice,
+        profitPercent: p.profitPercent,
         createdAt: new Date().toISOString(),
       };
     });
 
-    setItems(function (prev) {
-      return prev.concat(newItems);
-    });
+    setItems((prev) => [...prev, ...newItems]);
     setPreview([]);
     setBulkText("");
-    window.alert("تم حفظ الأصناف في المخزون");
+  };
+
+  const handleFieldChange = (id, field, value) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === id
+          ? {
+              ...it,
+              [field]:
+                field === "priceWithTax" ||
+                field === "minPrice" ||
+                field === "profitPercent" ||
+                field === "qty"
+                  ? Number(value || 0)
+                  : value,
+            }
+          : it
+      )
+    );
   };
 
   return (
-    <div style={{ direction: "rtl", textAlign: "right", padding: "16px" }}>
-      <h2>📦 المخزون / الجرد</h2>
-      <p style={{ fontSize: "14px", color: "#4b5563", marginBottom: "12px" }}>
-        من هنا تضيفين الرصيد الافتتاحي للمخزون دفعة واحدة. لاحقًا نربطه
-        بالموردين والمشتريات.
+    <div style={{ direction: "rtl", textAlign: "right" }}>
+      <h3>📦 المخزون / الجرد</h3>
+      <p style={{ fontSize: "13px", color: "#6b7280" }}>
+        من هنا تضيفين الرصيد الافتتاحي للمخزون دفعة واحدة، وبعدها تقدرين
+        تعدلين كل صنف (الوحدة، الفهرس، الحد الأدنى، نسبة الربح).
       </p>
 
-      {/* إضافة افتتاحية جماعية */}
       <div
         style={{
           border: "1px solid #e5e7eb",
           borderRadius: "12px",
-          padding: "12px",
-          marginBottom: "18px",
-          background: "#ffffff",
+          padding: "10px",
+          marginBottom: "16px",
+          backgroundColor: "#f9fafb",
         }}
       >
-        <h3>🧾 إضافة أصناف افتتاحية (دفعة واحدة)</h3>
+        <h4>🧾 إضافة أصناف افتتاحية (دفعة واحدة)</h4>
         <p style={{ fontSize: "13px", color: "#6b7280" }}>
           اكتبي كل صنف في سطر بالشكل التالي:
           <br />
@@ -171,61 +159,63 @@ function InventoryPage() {
           onChange={(e) => setBulkText(e.target.value)}
           style={{
             width: "100%",
-            marginTop: "8px",
             marginBottom: "8px",
+            borderRadius: "10px",
+            border: "1px solid #e5e7eb",
             padding: "8px",
-            borderRadius: "8px",
-            border: "1px solid #d1d5db",
-            fontFamily: "inherit",
+            fontSize: "13px",
+            boxSizing: "border-box",
           }}
           placeholder={
             "مثال:\nمعسل تفاحتين 250جم , 25 , 120\nفحم 3 كيلو , 18 , 40\n..."
           }
         />
 
-        <button
-          type="button"
-          onClick={handlePreview}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#4b7bec",
-            color: "#ffffff",
-            cursor: "pointer",
-            marginRight: "8px",
-          }}
-        >
-          👀 معاينة
-        </button>
-        <button
-          type="button"
-          onClick={handleSaveAll}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#16a34a",
-            color: "#ffffff",
-            cursor: "pointer",
-          }}
-        >
-          💾 حفظ في المخزون
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            type="button"
+            onClick={handlePreview}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#4b7bec",
+              color: "#ffffff",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            👀 معاينة
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveAll}
+            style={{
+              padding: "8px 14px",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#16a34a",
+              color: "#ffffff",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            💾 حفظ في المخزون
+          </button>
+        </div>
 
         {preview.length > 0 && (
-          <div style={{ marginTop: "12px" }}>
-            <h4>معاينة الأصناف قبل الحفظ</h4>
+          <div style={{ marginTop: "10px" }}>
+            <h5>معاينة الأصناف قبل الحفظ</h5>
             <table
               style={{
                 width: "100%",
                 borderCollapse: "collapse",
-                background: "#fff",
-                marginTop: "6px",
+                backgroundColor: "#ffffff",
               }}
             >
               <thead>
-                <tr style={{ background: "#f3f4f6" }}>
+                <tr style={{ backgroundColor: "#eef2ff" }}>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                     #
                   </th>
@@ -233,13 +223,7 @@ function InventoryPage() {
                     الاسم
                   </th>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    السعر مع الضريبة
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    السعر بدون الضريبة
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    الضريبة
+                    السعر شامل الضريبة
                   </th>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                     الكمية
@@ -265,12 +249,6 @@ function InventoryPage() {
                       {p.priceWithTax.toFixed(2)}
                     </td>
                     <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                      {p.priceWithoutTax.toFixed(2)}
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                      {p.vat.toFixed(2)}
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                       {p.qty}
                     </td>
                   </tr>
@@ -281,79 +259,229 @@ function InventoryPage() {
         )}
       </div>
 
-      {/* جدول الأصناف المحفوظة */}
-      <h3>📋 قائمة الأصناف في المخزون</h3>
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          background: "#fff",
-          marginTop: "6px",
-        }}
-      >
-        <thead>
-          <tr style={{ background: "#f3f4f6" }}>
-            <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-              الكود
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-              الاسم
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-              الباركود
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-              السعر (مع الضريبة)
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-              الكمية
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.id}>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {it.code}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {it.name}
-              </td>
-              <td
-                style={{
-                  border: "1px solid #e5e7eb",
-                  padding: "4px",
-                  fontSize: "11px",
-                  direction: "ltr",
-                }}
-              >
-                {it.barcode}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {it.priceWithTax.toFixed(2)}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {it.qty}
-              </td>
+      <h4>📋 قائمة الأصناف</h4>
+      <div style={{ overflowX: "auto" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <thead>
+            <tr style={{ backgroundColor: "#f3f4f6" }}>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الكود
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الاسم
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الفهرس
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الوحدة
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الباركود
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                السعر (مع الضريبة)
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الحد الأدنى
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                نسبة الربح %
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                الكمية
+              </th>
+              <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                تعديل
+              </th>
             </tr>
-          ))}
-
-          {items.length === 0 && (
-            <tr>
-              <td
-                colSpan={5}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  padding: "10px",
-                  textAlign: "center",
-                }}
-              >
-                لا توجد أصناف في المخزون حتى الآن.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((it) => {
+              const isEditing = editingId === it.id;
+              return (
+                <tr key={it.id}>
+                  <td
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      padding: "4px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    {it.code}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {it.name}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        value={it.category || ""}
+                        onChange={(e) =>
+                          handleFieldChange(it.id, "category", e.target.value)
+                        }
+                        style={{ width: "90%", fontSize: "11px" }}
+                      />
+                    ) : (
+                      it.category || "-"
+                    )}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        value={it.unit || ""}
+                        onChange={(e) =>
+                          handleFieldChange(it.id, "unit", e.target.value)
+                        }
+                        style={{ width: "80%", fontSize: "11px" }}
+                        placeholder="حبة / كرتون / كيس / شدة"
+                      />
+                    ) : (
+                      it.unit
+                    )}
+                  </td>
+                  <td
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      padding: "4px",
+                      fontSize: "10px",
+                      direction: "ltr",
+                    }}
+                  >
+                    {it.barcode}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={it.priceWithTax}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            it.id,
+                            "priceWithTax",
+                            e.target.value
+                          )
+                        }
+                        style={{ width: "80%", fontSize: "11px" }}
+                      />
+                    ) : (
+                      it.priceWithTax.toFixed(2)
+                    )}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={it.minPrice || 0}
+                        onChange={(e) =>
+                          handleFieldChange(it.id, "minPrice", e.target.value)
+                        }
+                        style={{ width: "80%", fontSize: "11px" }}
+                      />
+                    ) : (
+                      (it.minPrice || 0).toFixed(2)
+                    )}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={it.profitPercent || 0}
+                        onChange={(e) =>
+                          handleFieldChange(
+                            it.id,
+                            "profitPercent",
+                            e.target.value
+                          )
+                        }
+                        style={{ width: "70%", fontSize: "11px" }}
+                      />
+                    ) : (
+                      (it.profitPercent || 0).toFixed(0)
+                    )}
+                  </td>
+                  <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={it.qty || 0}
+                        onChange={(e) =>
+                          handleFieldChange(it.id, "qty", e.target.value)
+                        }
+                        style={{ width: "60%", fontSize: "11px" }}
+                      />
+                    ) : (
+                      it.qty
+                    )}
+                  </td>
+                  <td
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      padding: "4px",
+                      textAlign: "center",
+                    }}
+                  >
+                    {isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        style={{
+                          padding: "4px 8px",
+                          fontSize: "11px",
+                          borderRadius: "8px",
+                          border: "none",
+                          backgroundColor: "#16a34a",
+                          color: "#ffffff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        حفظ
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(it.id)}
+                        style={{
+                          padding: "4px 8px",
+                          fontSize: "11px",
+                          borderRadius: "8px",
+                          border: "none",
+                          backgroundColor: "#4b7bec",
+                          color: "#ffffff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        تعديل
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {items.length === 0 && (
+              <tr>
+                <td
+                  colSpan={10}
+                  style={{
+                    border: "1px solid #e5e7eb",
+                    padding: "10px",
+                    textAlign: "center",
+                    fontSize: "13px",
+                  }}
+                >
+                  لا توجد أصناف في المخزون حتى الآن.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -1,456 +1,288 @@
-// src/pages/DailyCollectionPage.js
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  getDailyCollections,
+  setDailyCollections,
+  addLedgerEntry,
+} from "../services/storage";
 
-function DailyCollectionPage() {
-  // موازنة الشبكة (يدوي)
-  const [recs, setRecs] = useState([]);
-  const [recDateTime, setRecDateTime] = useState("");
-  const [recNetworkName, setRecNetworkName] = useState("");
-  const [recVisa, setRecVisa] = useState("");
-  const [recMaster, setRecMaster] = useState("");
-  const [recMada, setRecMada] = useState("");
-  const [recOther, setRecOther] = useState("");
-  const [recStatus, setRecStatus] = useState("في الطريق");
-  const [recNote, setRecNote] = useState("");
-
-  // تحصيل كاش
-  const [cashList, setCashList] = useState([]);
-  const [cashDate, setCashDate] = useState("");
-  const [cashAmount, setCashAmount] = useState("");
-  const [cashNote, setCashNote] = useState("");
-
-  // تحصيل حوالات
-  const [trList, setTrList] = useState([]);
-  const [trDate, setTrDate] = useState("");
-  const [trAmount, setTrAmount] = useState("");
-  const [trBank, setTrBank] = useState("");
-  const [trFees, setTrFees] = useState("");
-  const [trNote, setTrNote] = useState("");
+function DailyCollectionPage({ currentUser }) {
+  const [items, setItems] = useState([]);
+  const [type, setType] = useState("mowazana");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
 
   useEffect(() => {
-    const savedRecs = localStorage.getItem("daily_reconciliations");
-    const savedCash = localStorage.getItem("daily_cash");
-    const savedTr = localStorage.getItem("daily_transfers");
-
-    if (savedRecs) setRecs(JSON.parse(savedRecs));
-    if (savedCash) setCashList(JSON.parse(savedCash));
-    if (savedTr) setTrList(JSON.parse(savedTr));
-
-    const today = new Date().toISOString().slice(0, 10);
-    const now = new Date().toISOString().slice(0, 16);
-
-    setRecDateTime(now);
-    setCashDate(today);
-    setTrDate(today);
+    const saved = getDailyCollections();
+    setItems(saved);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("daily_reconciliations", JSON.stringify(recs));
-  }, [recs]);
+    setDailyCollections(items);
+  }, [items]);
 
-  useEffect(() => {
-    localStorage.setItem("daily_cash", JSON.stringify(cashList));
-  }, [cashList]);
-
-  useEffect(() => {
-    localStorage.setItem("daily_transfers", JSON.stringify(trList));
-  }, [trList]);
-
-  const recTotal =
-    (Number(recVisa) || 0) +
-    (Number(recMaster) || 0) +
-    (Number(recMada) || 0) +
-    (Number(recOther) || 0);
-
-  const handleAddRec = () => {
-    if (!recDateTime || !recTotal) {
-      alert("رجاءً أدخلي التاريخ ومبالغ الموازنة (حتى لو نوع واحد فقط).");
+  const handleAdd = () => {
+    const value = Number(amount || 0);
+    if (value <= 0) {
+      alert("أدخلي مبلغاً أكبر من صفر");
       return;
     }
-
-    const item = {
+    const obj = {
       id: Date.now(),
-      dateTime: recDateTime,
-      networkName: recNetworkName || "شبكة بدون اسم",
-      visa: Number(recVisa) || 0,
-      master: Number(recMaster) || 0,
-      mada: Number(recMada) || 0,
-      other: Number(recOther) || 0,
-      total: recTotal,
-      status: recStatus,
-      note: recNote,
+      type,
+      amount: value,
+      note,
+      user: currentUser ? currentUser.displayName : "",
+      createdAt: new Date().toISOString(),
     };
+    const updated = [...items, obj];
+    setItems(updated);
 
-    setRecs((prev) => [item, ...prev]);
-    const now = new Date().toISOString().slice(0, 16);
-    setRecDateTime(now);
-    setRecNetworkName("");
-    setRecVisa("");
-    setRecMaster("");
-    setRecMada("");
-    setRecOther("");
-    setRecStatus("في الطريق");
-    setRecNote("");
-  };
-
-  const handleAddCash = () => {
-    if (!cashDate || !cashAmount) {
-      alert("رجاءً أدخلي تاريخ ومبلغ الكاش.");
-      return;
+    // دفتر أستاذ حسب النوع
+    if (type === "mowazana") {
+      addLedgerEntry({
+        accountName: "سند الموازنة",
+        accountType: "تحصيل",
+        debit: value,
+        credit: 0,
+        description: "تحصيل موازنة " + (note || ""),
+        refType: "daily_collection",
+        refId: String(obj.id),
+      });
+    } else if (type === "cash") {
+      addLedgerEntry({
+        accountName: "صندوق المحل",
+        accountType: "صندوق",
+        debit: value,
+        credit: 0,
+        description: "تحصيل كاش " + (note || ""),
+        refType: "daily_collection",
+        refId: String(obj.id),
+      });
+    } else if (type === "transfer") {
+      addLedgerEntry({
+        accountName: "صندوق الحوالات",
+        accountType: "تحصيل",
+        debit: value,
+        credit: 0,
+        description: "تحصيل حوالة " + (note || ""),
+        refType: "daily_collection",
+        refId: String(obj.id),
+      });
     }
-    const item = {
-      id: Date.now(),
-      date: cashDate,
-      amount: Number(cashAmount) || 0,
-      note: cashNote,
-    };
-    setCashList((prev) => [item, ...prev]);
-    setCashAmount("");
-    setCashNote("");
+
+    setAmount("");
+    setNote("");
   };
 
-  const handleAddTransfer = () => {
-    if (!trDate || !trAmount) {
-      alert("رجاءً أدخلي تاريخ ومبلغ الحوالة.");
-      return;
-    }
-    const item = {
-      id: Date.now(),
-      date: trDate,
-      amount: Number(trAmount) || 0,
-      bank: trBank,
-      fees: Number(trFees) || 0,
-      note: trNote,
-    };
-    setTrList((prev) => [item, ...prev]);
-    setTrAmount("");
-    setTrBank("");
-    setTrFees("");
-    setTrNote("");
-  };
-
-  // ملخص اليوم
-  const today = new Date().toISOString().slice(0, 10);
-  const todayRecs = recs.filter((r) => r.dateTime.slice(0, 10) === today);
-  const todayCash = cashList.filter((c) => c.date === today);
-  const todayTr = trList.filter((t) => t.date === today);
-
-  const sum = (arr, field) => arr.reduce((acc, cur) => acc + (cur[field] || 0), 0);
-
-  const totalRecToday = sum(todayRecs, "total");
-  const totalCashToday = sum(todayCash, "amount");
-  const totalTrToday = sum(todayTr, "amount");
-  const totalAllToday = totalRecToday + totalCashToday + totalTrToday;
+  const sumByType = (t) =>
+    items
+      .filter((it) => it.type === t)
+      .reduce((sum, it) => sum + it.amount, 0);
 
   return (
     <div style={{ direction: "rtl", textAlign: "right" }}>
-      <h2>💳 التحصيل اليومي</h2>
-      <p style={{ fontSize: "14px", color: "#4b5563", marginBottom: "10px" }}>
-        شاشة بسيطة للموظفين: موازنة شبكة + تحصيل كاش + تحصيل حوالات. 
-        التفاصيل المحاسبية العميقة تكون عندك في الحسابات.
+      <h3>💳 التحصيل اليومي</h3>
+      <p style={{ fontSize: "13px", color: "#6b7280" }}>
+        هنا يسجل الموظف تحصيل الموازنة، الكاش، والحوالات. كل حركة تذهب أيضاً
+        إلى دفتر الأستاذ.
       </p>
 
-      {/* ملخص اليوم */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-          gap: "8px",
-          marginBottom: "18px",
-        }}
-      >
-        <div
-          style={{
-            padding: "10px",
-            background: "#ffffff",
-            borderRadius: "10px",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>مجموع التحصيل اليوم</strong>
-          <div style={{ fontSize: "18px", marginTop: "4px" }}>
-            {totalAllToday.toFixed(2)} ريال
-          </div>
-        </div>
-        <div
-          style={{
-            padding: "10px",
-            background: "#ffffff",
-            borderRadius: "10px",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>موازنة الشبكات</strong>
-          <div style={{ marginTop: "4px" }}>
-            {totalRecToday.toFixed(2)} ريال
-          </div>
-        </div>
-        <div
-          style={{
-            padding: "10px",
-            background: "#ffffff",
-            borderRadius: "10px",
-            borderRadius: "10px",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>تحصيل كاش</strong>
-          <div style={{ marginTop: "4px" }}>
-            {totalCashToday.toFixed(2)} ريال
-          </div>
-        </div>
-        <div
-          style={{
-            padding: "10px",
-            background: "#ffffff",
-            borderRadius: "10px",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>تحصيل حوالات</strong>
-          <div style={{ marginTop: "4px" }}>
-            {totalTrToday.toFixed(2)} ريال
-          </div>
-        </div>
-      </div>
-
-      {/* قسم موازنة الشبكة */}
       <div
         style={{
           border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "12px",
-          marginBottom: "16px",
-          background: "#ffffff",
+          borderRadius: "10px",
+          padding: "10px",
+          backgroundColor: "#f9fafb",
+          marginBottom: "12px",
         }}
       >
-        <h3>📡 موازنة الشبكة (يدوي)</h3>
-
-        <label>التاريخ والوقت</label>
-        <input
-          type="datetime-local"
-          value={recDateTime}
-          onChange={(e) => setRecDateTime(e.target.value)}
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>اسم الشبكة / الجهاز</label>
-        <input
-          value={recNetworkName}
-          onChange={(e) => setRecNetworkName(e.target.value)}
-          placeholder="مثال: شبكة الفرع الرئيسي"
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-            gap: "8px",
-            marginBottom: "6px",
-          }}
-        >
-          <div>
-            <label>مبلغ فيزا</label>
-            <input
-              type="number"
-              value={recVisa}
-              onChange={(e) => setRecVisa(e.target.value)}
-              placeholder="0"
-              style={{ width: "100%" }}
-            />
-          </div>
-          <div>
-            <label>مبلغ ماستركارد</label>
-            <input
-              type="number"
-              value={recMaster}
-              onChange={(e) => setRecMaster(e.target.value)}
-              placeholder="0"
-              style={{ width: "100%" }}
-            />
-          </div>
-          <div>
-            <label>مبلغ مدى</label>
-            <input
-              type="number"
-              value={recMada}
-              onChange={(e) => setRecMada(e.target.value)}
-              placeholder="0"
-              style={{ width: "100%" }}
-            />
-          </div>
-          <div>
-            <label>مبالغ أخرى</label>
-            <input
-              type="number"
-              value={recOther}
-              onChange={(e) => setRecOther(e.target.value)}
-              placeholder="0"
-              style={{ width: "100%" }}
-            />
-          </div>
+        <h4 style={{ marginTop: 0 }}>إضافة تحصيل جديد</h4>
+        <div style={{ marginBottom: "6px" }}>
+          <label style={{ fontSize: "13px" }}>النوع</label>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              marginTop: "2px",
+              fontSize: "13px",
+            }}
+          >
+            <option value="mowazana">موازنة</option>
+            <option value="cash">تحصيل كاش</option>
+            <option value="transfer">تحصيل حوالة</option>
+          </select>
         </div>
 
-        <p style={{ fontSize: "14px", marginBottom: "6px" }}>
-          مجموع الموازنة: <strong>{recTotal.toFixed(2)} ريال</strong>
+        <div style={{ marginBottom: "6px" }}>
+          <label style={{ fontSize: "13px" }}>المبلغ</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              marginTop: "2px",
+              fontSize: "13px",
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: "6px" }}>
+          <label style={{ fontSize: "13px" }}>ملاحظة (اختياري)</label>
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "6px",
+              borderRadius: "8px",
+              border: "1px solid #e5e7eb",
+              marginTop: "2px",
+              fontSize: "13px",
+            }}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleAdd}
+          style={{
+            padding: "8px 12px",
+            borderRadius: "10px",
+            border: "none",
+            backgroundColor: "#4b7bec",
+            color: "#ffffff",
+            fontSize: "13px",
+            cursor: "pointer",
+          }}
+        >
+          💾 حفظ التحصيل
+        </button>
+      </div>
+
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: "10px",
+          padding: "10px",
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <h4 style={{ marginTop: 0 }}>ملخص اليوم (من البيانات المحفوظة)</h4>
+        <p style={{ fontSize: "13px" }}>
+          مجموع الموازنة: {sumByType("mowazana").toFixed(2)} ريال
+        </p>
+        <p style={{ fontSize: "13px" }}>
+          مجموع الكاش: {sumByType("cash").toFixed(2)} ريال
+        </p>
+        <p style={{ fontSize: "13px" }}>
+          مجموع الحوالات: {sumByType("transfer").toFixed(2)} ريال
         </p>
 
-        <label>حالة الموازنة</label>
-        <select
-          value={recStatus}
-          onChange={(e) => setRecStatus(e.target.value)}
-          style={{ width: "100%", marginBottom: "6px" }}
-        >
-          <option value="في الطريق">في الطريق للبنك</option>
-          <option value="وصلت للبنك">وصلت للبنك</option>
-        </select>
-
-        <label>ملاحظات (اختياري)</label>
-        <textarea
-          value={recNote}
-          onChange={(e) => setRecNote(e.target.value)}
-          rows={2}
-          style={{ width: "100%", marginBottom: "8px" }}
-        />
-
-        <button
-          type="button"
-          onClick={handleAddRec}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#16a34a",
-            color: "#ffffff",
-            cursor: "pointer",
-          }}
-        >
-          ✅ حفظ موازنة
-        </button>
-      </div>
-
-      {/* تحصيل كاش */}
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "12px",
-          marginBottom: "16px",
-          background: "#ffffff",
-        }}
-      >
-        <h3>💵 تحصيل كاش (صندوق المحل)</h3>
-
-        <label>التاريخ</label>
-        <input
-          type="date"
-          value={cashDate}
-          onChange={(e) => setCashDate(e.target.value)}
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>المبلغ</label>
-        <input
-          type="number"
-          value={cashAmount}
-          onChange={(e) => setCashAmount(e.target.value)}
-          placeholder="مثال: 200"
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>ملاحظات (اختياري)</label>
-        <textarea
-          value={cashNote}
-          onChange={(e) => setCashNote(e.target.value)}
-          rows={2}
-          style={{ width: "100%", marginBottom: "8px" }}
-        />
-
-        <button
-          type="button"
-          onClick={handleAddCash}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#2563eb",
-            color: "#ffffff",
-            cursor: "pointer",
-          }}
-        >
-          ✅ حفظ تحصيل كاش
-        </button>
-      </div>
-
-      {/* تحصيل حوالات */}
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "12px",
-          marginBottom: "16px",
-          background: "#ffffff",
-        }}
-      >
-        <h3>🏦 تحصيل حوالات</h3>
-
-        <label>التاريخ</label>
-        <input
-          type="date"
-          value={trDate}
-          onChange={(e) => setTrDate(e.target.value)}
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>مبلغ الحوالة</label>
-        <input
-          type="number"
-          value={trAmount}
-          onChange={(e) => setTrAmount(e.target.value)}
-          placeholder="مثال: 500"
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>اسم البنك / الجهة (اختياري)</label>
-        <input
-          value={trBank}
-          onChange={(e) => setTrBank(e.target.value)}
-          placeholder="مثال: بنك الراجحي"
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>رسوم الحوالة (اختياري)</label>
-        <input
-          type="number"
-          value={trFees}
-          onChange={(e) => setTrFees(e.target.value)}
-          placeholder="0"
-          style={{ width: "100%", marginBottom: "6px" }}
-        />
-
-        <label>ملاحظات</label>
-        <textarea
-          value={trNote}
-          onChange={(e) => setTrNote(e.target.value)}
-          rows={2}
-          style={{ width: "100%", marginBottom: "8px" }}
-        />
-
-        <button
-          type="button"
-          onClick={handleAddTransfer}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "none",
-            background: "#7c3aed",
-            color: "#ffffff",
-            cursor: "pointer",
-          }}
-        >
-          ✅ حفظ تحصيل حوالة
-        </button>
+        <h5>قائمة الحركات</h5>
+        <div style={{ maxHeight: "260px", overflowY: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              fontSize: "12px",
+            }}
+          >
+            <thead>
+              <tr style={{ backgroundColor: "#f3f4f6" }}>
+                <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                  التاريخ
+                </th>
+                <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                  النوع
+                </th>
+                <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                  المبلغ
+                </th>
+                <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                  المستخدم
+                </th>
+                <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                  ملاحظة
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items
+                .slice()
+                .reverse()
+                .map((it) => (
+                  <tr key={it.id}>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                      }}
+                    >
+                      {new Date(it.createdAt).toLocaleString("ar-SA")}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                      }}
+                    >
+                      {it.type === "mowazana"
+                        ? "موازنة"
+                        : it.type === "cash"
+                        ? "كاش"
+                        : "حوالة"}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                      }}
+                    >
+                      {it.amount.toFixed(2)}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                      }}
+                    >
+                      {it.user}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                      }}
+                    >
+                      {it.note}
+                    </td>
+                  </tr>
+                ))}
+              {items.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    style={{
+                      border: "1px solid #e5e7eb",
+                      padding: "6px",
+                      textAlign: "center",
+                    }}
+                  >
+                    لا توجد تحصيلات مسجلة حتى الآن.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

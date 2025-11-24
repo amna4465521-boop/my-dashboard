@@ -1,456 +1,466 @@
-// src/pages/SalesPage.js
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import {
+  getInventoryItems,
+  getInvoices,
+  setInvoices,
+  addLedgerEntry,
+} from "../services/storage";
 
-function SalesPage() {
-  // رقم الفاتورة يتولد تلقائي
-  const [invoiceNumber, setInvoiceNumber] = useState(1);
-  const [dateTime, setDateTime] = useState("");
-  const [customerName, setCustomerName] = useState("عميل المحل (تجزئة)");
-  const [totalAmount, setTotalAmount] = useState("");
-
-  // طرق الدفع
-  const [paymentMode, setPaymentMode] = useState("network"); // network / cash / mixed
-  const [networkAmount, setNetworkAmount] = useState("");
-  const [cashAmount, setCashAmount] = useState("");
-  const [cashReceived, setCashReceived] = useState("");
-
-  // حفظ الفواتير (محلياً) لعرضها
-  const [invoices, setInvoices] = useState([]);
+function SalesPage({ currentUser }) {
+  const [items, setItems] = useState([]);
+  const [selectedItemId, setSelectedItemId] = useState("");
+  const [qty, setQty] = useState(1);
+  const [cart, setCart] = useState([]);
+  const [customerName, setCustomerName] = useState("عميل المحل تجزئة");
+  const [paymentCash, setPaymentCash] = useState(0);
+  const [paymentCard, setPaymentCard] = useState(0);
+  const [paymentTransfer, setPaymentTransfer] = useState(0);
+  const [lastInvoiceNumber, setLastInvoiceNumber] = useState(0);
 
   useEffect(() => {
-    // قراءة آخر رقم فاتورة
-    const last = localStorage.getItem("last_invoice_number");
-    if (last) {
-      setInvoiceNumber(parseInt(last, 10) + 1);
+    const invItems = getInventoryItems();
+    setItems(invItems);
+    const invoices = getInvoices();
+    if (invoices.length > 0) {
+      const maxNum = Math.max(
+        ...invoices.map((inv) => Number(inv.invoiceNumber || 0))
+      );
+      setLastInvoiceNumber(maxNum);
     }
-
-    // تحميل الفواتير
-    const saved = localStorage.getItem("sales_invoices");
-    if (saved) {
-      setInvoices(JSON.parse(saved));
-    }
-
-    const now = new Date();
-    const iso = now.toISOString().slice(0, 16);
-    setDateTime(iso);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("sales_invoices", JSON.stringify(invoices));
-  }, [invoices]);
+  const handleAddToCart = () => {
+    if (!selectedItemId) {
+      alert("اختاري صنفاً أولاً");
+      return;
+    }
+    const item = items.find((i) => String(i.id) === String(selectedItemId));
+    if (!item) {
+      alert("الصنف غير موجود");
+      return;
+    }
+    const quantity = Number(qty || 0);
+    if (quantity <= 0) {
+      alert("الكمية يجب أن تكون أكبر من صفر");
+      return;
+    }
+    // تحقق بسيط من الكمية المتاحة
+    if (quantity > item.qty) {
+      alert("الكمية المدخلة أكبر من الكمية في المخزون");
+      return;
+    }
 
-  const total = Number(totalAmount) || 0;
+    const lineTotal = item.priceWithTax * quantity;
+    const newLine = {
+      itemId: item.id,
+      name: item.name,
+      qty: quantity,
+      unitPrice: item.priceWithTax,
+      lineTotal,
+    };
+    setCart((prev) => [...prev, newLine]);
+  };
 
-  // حسابات الدفع
-  let effectiveNetwork = 0;
-  let effectiveCash = 0;
-
-  if (paymentMode === "network") {
-    effectiveNetwork = total;
-    effectiveCash = 0;
-  } else if (paymentMode === "cash") {
-    effectiveCash = total;
-    effectiveNetwork = 0;
-  } else if (paymentMode === "mixed") {
-    effectiveNetwork = Number(networkAmount) || 0;
-    effectiveCash = Number(cashAmount) || 0;
-  }
-
-  const totalPaid = effectiveNetwork + effectiveCash;
-  const cashRec = Number(cashReceived) || 0;
-  const mustReturnToCustomer =
-    paymentMode === "cash" || paymentMode === "mixed"
-      ? cashRec - effectiveCash
-      : 0;
+  const cartTotal = cart.reduce((sum, line) => sum + line.lineTotal, 0);
+  const totalPaid =
+    Number(paymentCash || 0) +
+    Number(paymentCard || 0) +
+    Number(paymentTransfer || 0);
+  const changeAmount =
+    totalPaid > cartTotal ? totalPaid - cartTotal : 0;
 
   const handleSaveInvoice = () => {
-    if (!total || !dateTime) {
-      alert("رجاءً أدخلي المبلغ الإجمالي والتاريخ.");
+    if (cart.length === 0) {
+      alert("لا توجد أصناف في الفاتورة");
+      return;
+    }
+    if (totalPaid <= 0) {
+      alert("أدخلي طريقة دفع واحدة على الأقل");
       return;
     }
 
-    if (paymentMode === "mixed" && totalPaid !== total) {
-      alert("مجموع الدفع (شبكة + كاش) لا يساوي إجمالي الفاتورة.");
-      return;
-    }
-
-    if ((paymentMode === "cash" || paymentMode === "mixed") && cashRec < effectiveCash) {
-      alert("المبلغ النقدي المستلم أقل من الجزء النقدي من الفاتورة.");
-      return;
-    }
+    const nextNumber = lastInvoiceNumber + 1;
+    const invoiceNumber = String(nextNumber);
 
     const newInvoice = {
       id: Date.now(),
       invoiceNumber,
-      dateTime,
       customerName,
-      total,
-      paymentMode,
-      networkAmount: effectiveNetwork,
-      cashAmount: effectiveCash,
-      cashReceived: cashRec,
+      items: cart,
+      total: cartTotal,
+      paymentCash: Number(paymentCash || 0),
+      paymentCard: Number(paymentCard || 0),
+      paymentTransfer: Number(paymentTransfer || 0),
+      changeAmount,
+      createdBy: currentUser ? currentUser.username : "",
+      createdAt: new Date().toISOString(),
     };
 
-    setInvoices((prev) => [newInvoice, ...prev]);
-    localStorage.setItem("last_invoice_number", String(invoiceNumber));
-    setInvoiceNumber((prev) => prev + 1);
+    const existingInvoices = getInvoices();
+    const updated = [...existingInvoices, newInvoice];
+    setInvoices(updated);
+    setLastInvoiceNumber(nextNumber);
 
-    // إعادة ضبط للفاتورة الجديدة
-    const now = new Date();
-    const iso = now.toISOString().slice(0, 16);
-    setDateTime(iso);
-    setCustomerName("عميل المحل (تجزئة)");
-    setTotalAmount("");
-    setPaymentMode("network");
-    setNetworkAmount("");
-    setCashAmount("");
-    setCashReceived("");
+    // تحديث المخزون (إنقاص الكمية)
+    const updatedItems = items.map((it) => {
+      const line = cart.find((c) => c.itemId === it.id);
+      if (!line) return it;
+      return {
+        ...it,
+        qty: (it.qty || 0) - line.qty,
+      };
+    });
+    setItems(updatedItems);
+
+    // قيد في دفتر أستاذ (مبسط)
+    addLedgerEntry({
+      accountName: "مبيعات المحل",
+      accountType: "إيراد",
+      credit: cartTotal,
+      debit: 0,
+      description: "فاتورة مبيعات رقم " + invoiceNumber,
+      refType: "invoice",
+      refId: invoiceNumber,
+    });
+
+    if (paymentCash > 0) {
+      addLedgerEntry({
+        accountName: "صندوق المحل",
+        accountType: "صندوق",
+        debit: Number(paymentCash || 0),
+        credit: 0,
+        description: "تحصيل كاش فاتورة " + invoiceNumber,
+        refType: "invoice",
+        refId: invoiceNumber,
+    });
+    }
+
+    if (paymentCard > 0) {
+      addLedgerEntry({
+        accountName: "حساب الشبكات",
+        accountType: "تحصيل إلكتروني",
+        debit: Number(paymentCard || 0),
+        credit: 0,
+        description: "تحصيل شبكة فاتورة " + invoiceNumber,
+        refType: "invoice",
+        refId: invoiceNumber,
+      });
+    }
+
+    if (paymentTransfer > 0) {
+      addLedgerEntry({
+        accountName: "صندوق الحوالات",
+        accountType: "تحصيل",
+        debit: Number(paymentTransfer || 0),
+        credit: 0,
+        description: "تحصيل حوالة فاتورة " + invoiceNumber,
+        refType: "invoice",
+        refId: invoiceNumber,
+      });
+    }
+
+    // تصفير النموذج
+    setCart([]);
+    setPaymentCash(0);
+    setPaymentCard(0);
+    setPaymentTransfer(0);
+    alert("تم حفظ الفاتورة رقم " + invoiceNumber);
   };
-
-  // ملخص اليوم من الفواتير
-  const todayDate = new Date().toISOString().slice(0, 10);
-  const todayInvoices = invoices.filter(
-    (inv) => inv.dateTime.slice(0, 10) === todayDate
-  );
-  const sum = (filterFn) =>
-    todayInvoices.filter(filterFn).reduce((acc, cur) => acc + cur.total, 0);
-
-  const totalToday = sum(() => true);
-  const totalTodayCash = todayInvoices
-    .filter((inv) => inv.cashAmount > 0)
-    .reduce((acc, cur) => acc + cur.cashAmount, 0);
-  const totalTodayNetwork = todayInvoices
-    .filter((inv) => inv.networkAmount > 0)
-    .reduce((acc, cur) => acc + cur.networkAmount, 0);
 
   return (
     <div style={{ direction: "rtl", textAlign: "right" }}>
-      <h2>🛒 المبيعات اليومية</h2>
-      <p style={{ marginBottom: "15px", fontSize: "14px", color: "#4b5563" }}>
-        هنا يسجل الموظف الفاتورة بشكل مبسط، مع تقسيم الدفع (شبكة / كاش / معاً) وحساب الباقي للعميل.
+      <h3>🛒 واجهة المبيعات</h3>
+      <p style={{ fontSize: "13px", color: "#6b7280" }}>
+        واجهة بسيطة للمبيعات اليومية. لاحقاً نضيف الباركود والطباعة الحرارية
+        وكل التفاصيل التي اتفقنا عليها.
       </p>
 
-      {/* ملخص اليوم */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "10px",
-          marginBottom: "20px",
+          gridTemplateColumns: "2fr 1.2fr",
+          gap: "12px",
         }}
       >
+        {/* اختيار الأصناف */}
         <div
           style={{
-            padding: "10px",
-            borderRadius: "8px",
-            background: "#fff",
             border: "1px solid #e5e7eb",
+            borderRadius: "10px",
+            padding: "10px",
+            backgroundColor: "#f9fafb",
           }}
         >
-          <strong>إجمالي فواتير اليوم</strong>
-          <div style={{ fontSize: "20px", marginTop: "4px" }}>
-            {totalToday.toFixed(2)} ريال
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "10px",
-            borderRadius: "8px",
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>مجموع كاش اليوم</strong>
-          <div style={{ marginTop: "4px" }}>
-            {totalTodayCash.toFixed(2)} ريال
-          </div>
-        </div>
-
-        <div
-          style={{
-            padding: "10px",
-            borderRadius: "8px",
-            background: "#fff",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <strong>مجموع شبكة اليوم</strong>
-          <div style={{ marginTop: "4px" }}>
-            {totalTodayNetwork.toFixed(2)} ريال
-          </div>
-        </div>
-      </div>
-
-      {/* بيانات الفاتورة */}
-      <div
-        style={{
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "12px",
-          marginBottom: "20px",
-          background: "#ffffff",
-        }}
-      >
-        <h3>🧾 فاتورة جديدة</h3>
-
-        <div style={{ display: "grid", gap: "8px" }}>
-          <div>
-            <label>رقم الفاتورة</label>
-            <div>{invoiceNumber}</div>
-          </div>
-
-          <div>
-            <label>التاريخ والوقت</label>
-            <input
-              type="datetime-local"
-              value={dateTime}
-              onChange={(e) => setDateTime(e.target.value)}
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          <div>
-            <label>اسم العميل</label>
+          <h4 style={{ marginTop: 0 }}>إضافة أصناف للفاتورة</h4>
+          <div style={{ marginBottom: "8px" }}>
+            <label style={{ fontSize: "13px" }}>العميل</label>
             <input
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
-              style={{ width: "100%" }}
-              placeholder="مثال: عميل المحل (تجزئة)"
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
             />
           </div>
 
-          <div>
-            <label>المبلغ الإجمالي للفاتورة (مع الضريبة)</label>
+          <div style={{ marginBottom: "8px" }}>
+            <label style={{ fontSize: "13px" }}>الصنف</label>
+            <select
+              value={selectedItemId}
+              onChange={(e) => setSelectedItemId(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
+            >
+              <option value="">اختاري صنفاً</option>
+              {items.map((it) => (
+                <option key={it.id} value={it.id}>
+                  {it.name} — {it.priceWithTax.toFixed(2)} ريال — متاح:{" "}
+                  {it.qty}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: "8px" }}>
+            <label style={{ fontSize: "13px" }}>الكمية</label>
             <input
               type="number"
-              value={totalAmount}
-              onChange={(e) => setTotalAmount(e.target.value)}
-              placeholder="مثال: 150"
-              style={{ width: "100%" }}
+              min="1"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
             />
           </div>
-        </div>
 
-        {/* طرق الدفع */}
-        <div style={{ marginTop: "15px" }}>
-          <h4>💳 طريقة الدفع</h4>
-          <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
-            <button
-              type="button"
-              onClick={() => setPaymentMode("network")}
+          <button
+            type="button"
+            onClick={handleAddToCart}
+            style={{
+              padding: "8px 12px",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#4b7bec",
+              color: "#ffffff",
+              fontSize: "13px",
+              cursor: "pointer",
+            }}
+          >
+            ➕ إضافة للفاتورة
+          </button>
+
+          <div style={{ marginTop: "10px" }}>
+            <h5>محتوى الفاتورة</h5>
+            <table
               style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border:
-                  paymentMode === "network"
-                    ? "2px solid #2563eb"
-                    : "1px solid #d1d5db",
-                background:
-                  paymentMode === "network" ? "#e0f2fe" : "#ffffff",
-                cursor: "pointer",
+                width: "100%",
+                borderCollapse: "collapse",
+                backgroundColor: "#ffffff",
               }}
             >
-              💳 شبكة (كل المبلغ)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMode("cash")}
+              <thead>
+                <tr style={{ backgroundColor: "#eef2ff" }}>
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    الصنف
+                  </th>
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    الكمية
+                  </th>
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    سعر الوحدة
+                  </th>
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    الإجمالي
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {cart.map((line, idx) => (
+                  <tr key={idx}>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      {line.name}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {line.qty}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {line.unitPrice.toFixed(2)}
+                    </td>
+                    <td
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "4px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {line.lineTotal.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+                {cart.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "6px",
+                        fontSize: "12px",
+                        textAlign: "center",
+                      }}
+                    >
+                      لم تتم إضافة أصناف بعد.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div
               style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border:
-                  paymentMode === "cash"
-                    ? "2px solid #16a34a"
-                    : "1px solid #d1d5db",
-                background:
-                  paymentMode === "cash" ? "#dcfce7" : "#ffffff",
-                cursor: "pointer",
+                marginTop: "6px",
+                fontSize: "13px",
+                fontWeight: 600,
               }}
             >
-              💵 نقدي (كل المبلغ)
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentMode("mixed")}
-              style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border:
-                  paymentMode === "mixed"
-                    ? "2px solid #7c3aed"
-                    : "1px solid #d1d5db",
-                background:
-                  paymentMode === "mixed" ? "#ede9fe" : "#ffffff",
-                cursor: "pointer",
-              }}
-            >
-              💳+💵 الجميع / أخرى
-            </button>
+              إجمالي الفاتورة: {cartTotal.toFixed(2)} ريال
+            </div>
           </div>
-
-          {paymentMode === "mixed" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "10px",
-                marginBottom: "10px",
-              }}
-            >
-              <div>
-                <label>جزء شبكة</label>
-                <input
-                  type="number"
-                  value={networkAmount}
-                  onChange={(e) => setNetworkAmount(e.target.value)}
-                  placeholder="مثال: 400"
-                  style={{ width: "100%" }}
-                />
-              </div>
-              <div>
-                <label>جزء نقدي</label>
-                <input
-                  type="number"
-                  value={cashAmount}
-                  onChange={(e) => setCashAmount(e.target.value)}
-                  placeholder="مثال: 600"
-                  style={{ width: "100%" }}
-                />
-              </div>
-              <div style={{ gridColumn: "1 / span 2", fontSize: "13px" }}>
-                مجموع الدفع: {totalPaid.toFixed(2)} ريال (يجب أن يساوي{" "}
-                {total.toFixed(2)} ريال)
-              </div>
-            </div>
-          )}
-
-          {(paymentMode === "cash" || paymentMode === "mixed") && (
-            <div
-              style={{
-                marginTop: "10px",
-                padding: "8px",
-                borderRadius: "8px",
-                background: "#f9fafb",
-                border: "1px solid #e5e7eb",
-              }}
-            >
-              <label>المبلغ النقدي الذي استلمه الموظف من العميل</label>
-              <input
-                type="number"
-                value={cashReceived}
-                onChange={(e) => setCashReceived(e.target.value)}
-                placeholder="مثال: 100"
-                style={{ width: "100%", marginTop: "4px" }}
-              />
-
-              {cashRec > 0 && cashRec < effectiveCash && (
-                <p style={{ marginTop: "8px", color: "red", fontSize: "13px" }}>
-                  المبلغ النقدي المستلم أقل من الجزء النقدي من الفاتورة.
-                </p>
-              )}
-
-              {cashRec >= effectiveCash && effectiveCash > 0 && (
-                <p
-                  style={{ marginTop: "8px", color: "green", fontSize: "13px" }}
-                >
-                  الباقي المستحق للعميل:{" "}
-                  <strong>{mustReturnToCustomer.toFixed(2)} ريال</strong>
-                </p>
-              )}
-            </div>
-          )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleSaveInvoice}
+        {/* الدفع */}
+        <div
           style={{
-            marginTop: "15px",
-            padding: "10px 16px",
+            border: "1px solid #e5e7eb",
             borderRadius: "10px",
-            border: "none",
-            background: "#4b7bec",
-            color: "#ffffff",
-            fontSize: "15px",
-            cursor: "pointer",
+            padding: "10px",
+            backgroundColor: "#f9fafb",
           }}
         >
-          ✅ حفظ الفاتورة
-        </button>
+          <h4 style={{ marginTop: 0 }}>طريقة الدفع</h4>
+          <div style={{ fontSize: "12px", color: "#6b7280" }}>
+            يمكنك تقسيم المبلغ بين شبكة / كاش / حوالة.
+          </div>
+
+          <div style={{ marginTop: "8px" }}>
+            <label style={{ fontSize: "13px" }}>نقدي (كاش)</label>
+            <input
+              type="number"
+              value={paymentCash}
+              onChange={(e) => setPaymentCash(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: "8px" }}>
+            <label style={{ fontSize: "13px" }}>شبكة</label>
+            <input
+              type="number"
+              value={paymentCard}
+              onChange={(e) => setPaymentCard(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: "8px" }}>
+            <label style={{ fontSize: "13px" }}>حوالة</label>
+            <input
+              type="number"
+              value={paymentTransfer}
+              onChange={(e) => setPaymentTransfer(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                marginTop: "2px",
+                fontSize: "13px",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              marginTop: "10px",
+              fontSize: "13px",
+              borderTop: "1px dashed #e5e7eb",
+              paddingTop: "8px",
+            }}
+          >
+            <div>إجمالي الفاتورة: {cartTotal.toFixed(2)} ريال</div>
+            <div>إجمالي المدفوع: {totalPaid.toFixed(2)} ريال</div>
+            <div>
+              المتبقي للعميل:{" "}
+              {changeAmount > 0 ? changeAmount.toFixed(2) : "0.00"} ريال
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSaveInvoice}
+            style={{
+              marginTop: "10px",
+              padding: "8px 12px",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#16a34a",
+              color: "#ffffff",
+              fontSize: "13px",
+              cursor: "pointer",
+              width: "100%",
+            }}
+          >
+            💾 حفظ الفاتورة
+          </button>
+        </div>
       </div>
-
-      {/* قائمة آخر الفواتير بشكل بسيط */}
-      <h3>🧾 آخر الفواتير المسجلة</h3>
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          background: "#fff",
-        }}
-      >
-        <thead>
-          <tr style={{ background: "#f3f4f6" }}>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              رقم
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              التاريخ
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              العميل
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              الإجمالي
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              شبكة
-            </th>
-            <th style={{ border: "1px solid #e5e7eb", padding: "6px" }}>
-              نقدي
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {invoices.map((inv) => (
-            <tr key={inv.id}>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.invoiceNumber}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.dateTime.replace("T", " ")}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.customerName}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.total.toFixed(2)}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.networkAmount.toFixed(2)}
-              </td>
-              <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                {inv.cashAmount.toFixed(2)}
-              </td>
-            </tr>
-          ))}
-
-          {invoices.length === 0 && (
-            <tr>
-              <td
-                colSpan="6"
-                style={{
-                  border: "1px solid #e5e7eb",
-                  padding: "10px",
-                  textAlign: "center",
-                }}
-              >
-                لا توجد فواتير مسجلة حتى الآن.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }
