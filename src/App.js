@@ -17,6 +17,7 @@ import LedgerPage from "./pages/LedgerPage";
 const USERS = [
   { username: "N1", password: "12345", displayName: "نجيب", role: "employee" },
   { username: "D1", password: "12345", displayName: "دارس", role: "employee" },
+  { username: "R", password: "00", displayName: "شوشو", role: "employee" },
   { username: "A1", password: "12345", displayName: "تجربة", role: "admin" },
 ];
 
@@ -284,7 +285,7 @@ function App() {
               style={inputStyle}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="مثال: N1 أو D1 أو A1"
+              placeholder="حط يوزرك يا حلوو"
             />
             <label style={{ fontSize: "14px" }}>كلمة المرور</label>
             <input
@@ -292,7 +293,7 @@ function App() {
               value={password}
               type="password"
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="12345"
+              placeholder="تعرف الباسورد؟؟ اكيد لا"
             />
 
             <div
