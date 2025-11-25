@@ -1,194 +1,155 @@
 // src/pages/SalesPage.js
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 
-// دالة بسيطة لتنسيق المبلغ
-function formatCurrency(value) {
-  const num = Number(value) || 0;
-  return num.toLocaleString("ar-SA", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+const DEFAULT_CUSTOMER = "عميل المحل تجزئة";
+
+const PAYMENT_TYPES = {
+  CASH: "cash",
+  CARD: "card",
+  MIXED: "mixed",
+};
+
+function formatDateTime(date) {
+  return date.toLocaleString("ar-SA", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
-function todayKey(dateStr) {
-  // نخزن التاريخ بصيغة YYYY-MM-DD
-  const d = dateStr ? new Date(dateStr) : new Date();
-  return d.toISOString().slice(0, 10);
-}
-
-export default function SalesPage({ currentUser }) {
-  // ======= الحالة العامة =======
-  const [inventoryItems, setInventoryItems] = useState([]); // من صفحة الجرد
-  const [invoiceItems, setInvoiceItems] = useState([]);
-  const [branchName, setBranchName] = useState("فرع الرياض");
-  const [customerName, setCustomerName] = useState("عميل المحل تجزئة");
-  const [invoiceDate, setInvoiceDate] = useState(todayKey());
+function SalesPage({ currentUser }) {
+  // بيانات الفاتورة
   const [invoiceNumber, setInvoiceNumber] = useState(1);
+  const [invoiceDate, setInvoiceDate] = useState(new Date());
+  const [branch, setBranch] = useState("فرع الرياض");
+  const [customer, setCustomer] = useState(DEFAULT_CUSTOMER);
+
+  // أصناف الفاتورة
+  const [items, setItems] = useState([]);
 
   // طريقة الدفع
-  const [paymentType, setPaymentType] = useState("cash"); // cash | network | split
+  const [paymentType, setPaymentType] = useState(PAYMENT_TYPES.CASH);
+  const [cashAmount, setCashAmount] = useState("");
+  const [cardAmount, setCardAmount] = useState("");
   const [networks, setNetworks] = useState([]);
-  const [selectedNetwork, setSelectedNetwork] = useState("");
-  const [splitCash, setSplitCash] = useState("");
-  const [splitCard, setSplitCard] = useState("");
+  const [selectedNetworkId, setSelectedNetworkId] = useState("");
 
-  // إعدادات عرض الكروت
-  const [showStatsForEmployees, setShowStatsForEmployees] = useState(false);
-
-  // أرقام اليوم
-  const [todayStats, setTodayStats] = useState({
-    totalReconciliation: 0,
-    totalNetwork: 0,
-    totalCash: 0,
-  });
+  // فواتير محفوظة محليًا + مؤشر للتنقل بينها
+  const [savedInvoices, setSavedInvoices] = useState([]);
+  const [currentInvoiceIndex, setCurrentInvoiceIndex] = useState(null);
 
   const isAdmin = currentUser?.role === "admin";
 
-  // ======= تحميل البيانات من localStorage عند أول فتح =======
+  // تحميل الشبكات والفواتير من localStorage
   useEffect(() => {
-    // المخزون
-    const savedInventory = localStorage.getItem("inventory_items");
-    if (savedInventory) {
+    const storedNetworks = localStorage.getItem("pos_networks");
+    if (storedNetworks) {
       try {
-        setInventoryItems(JSON.parse(savedInventory));
-      } catch (e) {
-        console.error("خطأ في قراءة المخزون:", e);
-      }
-    }
-
-    // الشبكات
-    const savedNetworks = localStorage.getItem("pos_networks");
-    if (savedNetworks) {
-      try {
-        const parsed = JSON.parse(savedNetworks);
+        const parsed = JSON.parse(storedNetworks);
         setNetworks(parsed);
-        if (parsed[0]) setSelectedNetwork(parsed[0].id);
+        if (parsed.length > 0) setSelectedNetworkId(parsed[0].id);
       } catch (e) {
-        console.error("خطأ في قراءة الشبكات:", e);
+        console.error("خطأ في قراءة الشبكات", e);
       }
     } else {
-      // قيم افتراضية
-      const defaults = [
-        { id: "mada", name: "مدى" },
-        { id: "visa", name: "فيزا" },
-        { id: "mc", name: "ماستركارد" },
-      ];
-      setNetworks(defaults);
-      setSelectedNetwork(defaults[0].id);
-      localStorage.setItem("pos_networks", JSON.stringify(defaults));
+      // شبكة افتراضية
+      const defaultNet = [{ id: 1, name: "مدى" }];
+      setNetworks(defaultNet);
+      setSelectedNetworkId(1);
+      localStorage.setItem("pos_networks", JSON.stringify(defaultNet));
     }
 
-    // إعداد عرض الكروت
-    const savedShowStats = localStorage.getItem("sales_show_stats_for_employees");
-    if (savedShowStats) {
-      setShowStatsForEmployees(savedShowStats === "true");
-    }
-
-    // الفواتير السابقة (لحساب رقم الفاتورة وأرقام اليوم)
-    const savedInvoices = localStorage.getItem("sales_invoices");
-    if (savedInvoices) {
+    const storedInvoices = localStorage.getItem("sales_invoices_v1");
+    if (storedInvoices) {
       try {
-        const parsed = JSON.parse(savedInvoices);
+        const parsed = JSON.parse(storedInvoices);
+        setSavedInvoices(parsed);
         if (parsed.length > 0) {
-          const maxNo = Math.max(...parsed.map((inv) => inv.invoiceNumber || 0));
-          setInvoiceNumber(maxNo + 1);
+          setInvoiceNumber(parsed[parsed.length - 1].number + 1);
         }
-        recomputeTodayStats(parsed);
       } catch (e) {
-        console.error("خطأ في قراءة فواتير المبيعات:", e);
+        console.error("خطأ في قراءة الفواتير", e);
       }
     }
   }, []);
 
-  // ======= دوال مساعدة =======
+  useEffect(() => {
+    // تحديث الوقت تلقائيًا كل ما تفتح الفاتورة
+    setInvoiceDate(new Date());
+  }, [invoiceNumber]);
 
-  const recomputeTodayStats = (invoices) => {
-    const today = todayKey();
-    const todays = invoices.filter((inv) => inv.dateKey === today);
-
-    let totalCash = 0;
-    let totalCard = 0;
-
-    todays.forEach((inv) => {
-      totalCash += Number(inv.cashAmount || 0);
-      totalCard += Number(inv.cardAmount || 0);
-    });
-
-    setTodayStats({
-      // مبدئيًا نخلي الموازنة = مجموع الشبكة (نقدر نعدلها لاحقًا إذا ربطناها بالموازنة الحقيقية)
-      totalReconciliation: totalCard,
-      totalNetwork: totalCard,
-      totalCash: totalCash,
-    });
+  const saveInvoicesToStorage = (list) => {
+    localStorage.setItem("sales_invoices_v1", JSON.stringify(list));
   };
 
-  const invoiceTotal = invoiceItems.reduce(
-    (sum, row) => sum + (Number(row.total) || 0),
-    0
+  // ====== حسابات سريعة ======
+
+  const calcRowTotal = (row) => {
+    const qty = Number(row.qty) || 0;
+    const price = Number(row.unitPrice) || 0;
+    return qty * price;
+  };
+
+  const calcInvoiceTotal = () => {
+    return items.reduce((sum, row) => sum + calcRowTotal(row), 0);
+  };
+
+  // ملخص اليوم (للكروت اللي فوق مثل الميزان)
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const visibleInvoicesForUser = savedInvoices.filter((inv) => {
+    if (!inv.date) return false;
+    const d = inv.date.slice(0, 10);
+    if (d !== todayKey) return false;
+    // لو سوينا لاحقًا إخفاء عن موظفين نفلتر هنا
+    if (inv.hiddenFromEmployees && !isAdmin) return false;
+    return true;
+  });
+
+  const todayTotals = visibleInvoicesForUser.reduce(
+    (acc, inv) => {
+      acc.count += 1;
+      acc.total += inv.total || 0;
+      acc.cash += inv.cashAmount || 0;
+      acc.card += inv.cardAmount || 0;
+      return acc;
+    },
+    { count: 0, total: 0, cash: 0, card: 0 }
   );
 
-  const handleAddRow = () => {
-    setInvoiceItems((prev) => [
+  // ====== إدارة الأصناف ======
+
+  const handleAddEmptyRow = () => {
+    setItems((prev) => [
       ...prev,
       {
-        id: Date.now() + Math.random(),
-        itemId: "",
+        id: Date.now(),
         name: "",
         unit: "حبة",
         qty: 1,
-        unitPrice: 0,
-        total: 0,
+        unitPrice: "",
       },
     ]);
   };
 
-  const handleRemoveRow = (rowId) => {
-    setInvoiceItems((prev) => prev.filter((r) => r.id !== rowId));
-  };
-
-  const handleItemChange = (rowId, itemId) => {
-    const item = inventoryItems.find((it) => String(it.id) === String(itemId));
-    setInvoiceItems((prev) =>
-      prev.map((row) => {
-        if (row.id !== rowId) return row;
-        if (!item) {
-          return { ...row, itemId, name: "", unitPrice: 0, total: 0 };
-        }
-        const unitPrice = Number(item.priceWithTax || 0);
-        const qty = Number(row.qty || 0) || 1;
-        return {
-          ...row,
-          itemId,
-          name: item.name,
-          unitPrice,
-          total: unitPrice * qty,
-        };
-      })
-    );
-  };
-
   const handleRowFieldChange = (rowId, field, value) => {
-    setInvoiceItems((prev) =>
+    setItems((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
         const updated = { ...row, [field]: value };
-
-        const qtyNum = Number(
-          field === "qty" ? value : updated.qty
-        );
-        const priceNum = Number(
-          field === "unitPrice" ? value : updated.unitPrice
-        );
-
-        if (!isNaN(qtyNum) && !isNaN(priceNum)) {
-          updated.total = qtyNum * priceNum;
-        }
         return updated;
       })
     );
   };
 
-  // حفظ الشبكات
+  const handleDeleteRow = (rowId) => {
+    setItems((prev) => prev.filter((row) => row.id !== rowId));
+  };
+
+  // ====== إدارة الشبكات ======
+
   const handleAddNetwork = () => {
     const name = window.prompt("أدخل اسم الشبكة (مثال: مدى 2):");
     if (!name) return;
@@ -196,7 +157,7 @@ export default function SalesPage({ currentUser }) {
     const newList = [...networks, { id, name }];
     setNetworks(newList);
     localStorage.setItem("pos_networks", JSON.stringify(newList));
-    setSelectedNetwork(id);
+    setSelectedNetworkId(id);
   };
 
   const handleDeleteNetwork = (id) => {
@@ -204,334 +165,282 @@ export default function SalesPage({ currentUser }) {
     const newList = networks.filter((n) => n.id !== id);
     setNetworks(newList);
     localStorage.setItem("pos_networks", JSON.stringify(newList));
-    if (selectedNetwork === id && newList[0]) {
-      setSelectedNetwork(newList[0].id);
+    if (selectedNetworkId === id && newList.length > 0) {
+      setSelectedNetworkId(newList[0].id);
     }
   };
 
-  const handleToggleStatsForEmployees = () => {
-    const newVal = !showStatsForEmployees;
-    setShowStatsForEmployees(newVal);
-    localStorage.setItem("sales_show_stats_for_employees", String(newVal));
-  };
+  // ====== حفظ الفاتورة ======
 
-  // حفظ الفاتورة
-  const handleSaveInvoice = () => {
-    if (invoiceItems.length === 0) {
-      window.alert("الرجاء إضافة أصناف للفاتورة أولاً.");
+  const handleSaveInvoice = (printAfter = false) => {
+    if (items.length === 0) {
+      window.alert("لم يتم إضافة أصناف للفاتورة.");
       return;
     }
 
-    if (!paymentType) {
-      window.alert("الرجاء اختيار طريقة الدفع.");
+    const total = calcInvoiceTotal();
+    if (total <= 0) {
+      window.alert("إجمالي الفاتورة يجب أن يكون أكبر من صفر.");
       return;
     }
 
-    const total = invoiceTotal;
-    let cashAmount = 0;
-    let cardAmount = 0;
-    let usedNetwork = "";
+    let finalCash = 0;
+    let finalCard = 0;
 
-    if (paymentType === "cash") {
-      cashAmount = total;
-    } else if (paymentType === "network") {
-      cardAmount = total;
-      usedNetwork = selectedNetwork;
-      if (!usedNetwork) {
-        window.alert("الرجاء اختيار شبكة.");
+    if (paymentType === PAYMENT_TYPES.CASH) {
+      finalCash = total;
+    } else if (paymentType === PAYMENT_TYPES.CARD) {
+      finalCard = total;
+    } else if (paymentType === PAYMENT_TYPES.MIXED) {
+      const c = Number(cashAmount) || 0;
+      const k = Number(cardAmount) || 0;
+      if (Math.abs(c + k - total) > 0.01) {
+        window.alert("مجموع النقدي + الشبكة يجب أن يساوي إجمالي الفاتورة.");
         return;
       }
-    } else if (paymentType === "split") {
-      const cash = Number(splitCash) || 0;
-      const card = Number(splitCard) || 0;
-      const diff = Math.abs(total - (cash + card));
-      if (diff > 0.01) {
-        window.alert(
-          "مجموع الكاش + الشبكة لا يساوي إجمالي الفاتورة. الرجاء التأكد."
-        );
-        return;
-      }
-      cashAmount = cash;
-      cardAmount = card;
-      usedNetwork = selectedNetwork;
-      if (!usedNetwork) {
-        window.alert("الرجاء اختيار شبكة للدفع بالشبكة.");
-        return;
-      }
+      finalCash = c;
+      finalCard = k;
     }
 
-    const newInvoice = {
+    const invoiceObj = {
       id: Date.now(),
-      invoiceNumber,
-      branchName,
-      customerName,
-      dateKey: todayKey(invoiceDate),
-      invoiceDate,
-      items: invoiceItems,
-      totalAmount: total,
+      number: invoiceNumber,
+      date: invoiceDate.toISOString(),
+      branch,
+      customer,
+      items,
       paymentType,
-      networkId: usedNetwork,
-      cashAmount,
-      cardAmount,
-      createdBy: currentUser?.username || "",
+      cashAmount: finalCash,
+      cardAmount: finalCard,
+      networkId:
+        paymentType === PAYMENT_TYPES.CARD ||
+        paymentType === PAYMENT_TYPES.MIXED
+          ? selectedNetworkId
+          : null,
+      total,
+      createdBy: currentUser?.username || null,
+      hiddenFromEmployees: false, // ممكن نستخدمها لاحقًا
     };
 
-    // حفظ في localStorage
-    const savedInvoices = localStorage.getItem("sales_invoices");
-    let list = [];
-    if (savedInvoices) {
-      try {
-        list = JSON.parse(savedInvoices);
-      } catch {
-        list = [];
-      }
-    }
-    const newList = [...list, newInvoice];
-    localStorage.setItem("sales_invoices", JSON.stringify(newList));
+    const newList = [...savedInvoices, invoiceObj];
+    setSavedInvoices(newList);
+    saveInvoicesToStorage(newList);
+    setCurrentInvoiceIndex(newList.length - 1);
 
-    // تحديث أرقام اليوم
-    recomputeTodayStats(newList);
-
-    // تحديث رقم الفاتورة
+    // تجهيز فاتورة جديدة
     setInvoiceNumber((prev) => prev + 1);
+    setItems([]);
+    setPaymentType(PAYMENT_TYPES.CASH);
+    setCashAmount("");
+    setCardAmount("");
+    setInvoiceDate(new Date());
 
-    // تنظيف الفاتورة الجارية
-    setInvoiceItems([]);
-    setPaymentType("cash");
-    setSplitCash("");
-    setSplitCard("");
-
-    window.alert("تم حفظ الفاتورة مؤقتاً في النظام المحلي.");
+    if (printAfter) {
+      // مؤقتًا نطبع الصفحة كلها، لاحقًا نخلي قسم الفاتورة فقط للطباعة
+      setTimeout(() => {
+        window.print();
+      }, 100);
+    } else {
+      window.alert("تم حفظ الفاتورة بنجاح (بدون طباعة).");
+    }
   };
 
-  // ======= JSX =======
-  const showStats =
-    isAdmin || showStatsForEmployees;
+  // ====== التنقل بين الفواتير المحفوظة (بسيط) ======
 
+  const handleLoadInvoiceByIndex = (index) => {
+    if (index < 0 || index >= savedInvoices.length) return;
+    const inv = savedInvoices[index];
+    setCurrentInvoiceIndex(index);
+    setInvoiceNumber(inv.number);
+    setInvoiceDate(new Date(inv.date));
+    setBranch(inv.branch);
+    setCustomer(inv.customer);
+    setPaymentType(inv.paymentType);
+    setCashAmount(inv.cashAmount || "");
+    setCardAmount(inv.cardAmount || "");
+    setSelectedNetworkId(inv.networkId || "");
+    setItems(
+      inv.items.map((row) => ({
+        ...row,
+        id: row.id || Date.now() + Math.random(),
+      }))
+    );
+  };
+
+  const handlePrevInvoice = () => {
+    if (currentInvoiceIndex === null) return;
+    const newIndex = currentInvoiceIndex - 1;
+    if (newIndex >= 0) handleLoadInvoiceByIndex(newIndex);
+  };
+
+  const handleNextInvoice = () => {
+    if (currentInvoiceIndex === null) return;
+    const newIndex = currentInvoiceIndex + 1;
+    if (newIndex < savedInvoices.length) handleLoadInvoiceByIndex(newIndex);
+  };
+
+  const total = calcInvoiceTotal();
+
+  // ====== JSX ======
   return (
-    <div
-      style={{
-        direction: "rtl",
-        textAlign: "right",
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
-      }}
-    >
-      {/* كروت اليوم */}
-      {showStats && (
+    <div style={{ padding: "8px" }}>
+      {/* كروت ملخص اليوم */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gap: "8px",
+          marginBottom: "10px",
+        }}
+      >
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "8px",
-            marginBottom: "12px",
+            background: "#fef3c7",
+            borderRadius: "10px",
+            padding: "8px",
+            fontSize: "12px",
           }}
         >
-          <div
-            style={{
-              flex: "1 1 120px",
-              padding: "8px 10px",
-              borderRadius: "10px",
-              background: "#0f172a",
-              color: "#e5e7eb",
-            }}
-          >
-            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
-              💳 مجموع شغل اليوم (موازنة)
-            </div>
-            <div style={{ fontWeight: 700, fontSize: "16px" }}>
-              {formatCurrency(todayStats.totalReconciliation)} ريال
-            </div>
+          <div>💰 مبيعات اليوم</div>
+          <div style={{ fontWeight: 700 }}>
+            {todayTotals.total.toFixed(2)} ريال
           </div>
-
-          <div
-            style={{
-              flex: "1 1 120px",
-              padding: "8px 10px",
-              borderRadius: "10px",
-              background: "#111827",
-              color: "#e5e7eb",
-            }}
-          >
-            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
-              🧾 مجموع شغل اليوم شبكة
-            </div>
-            <div style={{ fontWeight: 700, fontSize: "16px" }}>
-              {formatCurrency(todayStats.totalNetwork)} ريال
-            </div>
-          </div>
-
-          <div
-            style={{
-              flex: "1 1 120px",
-              padding: "8px 10px",
-              borderRadius: "10px",
-              background: "#022c22",
-              color: "#d1fae5",
-            }}
-          >
-            <div style={{ fontSize: "13px", marginBottom: "4px" }}>
-              💵 مجموع شغل اليوم كاش
-            </div>
-            <div style={{ fontWeight: 700, fontSize: "16px" }}>
-              {formatCurrency(todayStats.totalCash)} ريال
-            </div>
-          </div>
-
-          {/* إعدادات إظهار الكروت + إعداد الشبكات (للمدير فقط) */}
-          {isAdmin && (
-            <div
-              style={{
-                flex: "1 1 180px",
-                padding: "8px 10px",
-                borderRadius: "10px",
-                background: "#f9fafb",
-                border: "1px dashed #e5e7eb",
-                fontSize: "12px",
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: "4px" }}>
-                ⚙ إعدادات صفحة المبيعات
-              </div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={showStatsForEmployees}
-                  onChange={handleToggleStatsForEmployees}
-                />
-                <span>إظهار كروت إجمالي اليوم للموظفين</span>
-              </label>
-
-              <div style={{ marginTop: "6px" }}>
-                <div style={{ marginBottom: "2px" }}>شبكات نقاط البيع:</div>
-                <ul style={{ margin: 0, paddingInlineStart: "1.2rem" }}>
-                  {networks.map((n) => (
-                    <li key={n.id}>
-                      {n.name}{" "}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNetwork(n.id)}
-                        style={{
-                          border: "none",
-                          background: "transparent",
-                          color: "#ef4444",
-                          cursor: "pointer",
-                          fontSize: "11px",
-                        }}
-                      >
-                        حذف
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={handleAddNetwork}
-                  style={{
-                    marginTop: "4px",
-                    padding: "3px 8px",
-                    borderRadius: "6px",
-                    border: "1px solid #4b5563",
-                    background: "#fff",
-                    cursor: "pointer",
-                    fontSize: "11px",
-                  }}
-                >
-                  ➕ إضافة شبكة جديدة
-                </button>
-              </div>
-            </div>
-          )}
         </div>
-      )}
+        <div
+          style={{
+            background: "#dcfce7",
+            borderRadius: "10px",
+            padding: "8px",
+            fontSize: "12px",
+          }}
+        >
+          <div>💵 كاش اليوم</div>
+          <div style={{ fontWeight: 700 }}>
+            {todayTotals.cash.toFixed(2)} ريال
+          </div>
+        </div>
+        <div
+          style={{
+            background: "#dbeafe",
+            borderRadius: "10px",
+            padding: "8px",
+            fontSize: "12px",
+          }}
+        >
+          <div>💳 شبكة اليوم</div>
+          <div style={{ fontWeight: 700 }}>
+            {todayTotals.card.toFixed(2)} ريال
+          </div>
+        </div>
+        <div
+          style={{
+            background: "#f3e8ff",
+            borderRadius: "10px",
+            padding: "8px",
+            fontSize: "12px",
+          }}
+        >
+          <div>🧾 عدد الفواتير</div>
+          <div style={{ fontWeight: 700 }}>{todayTotals.count}</div>
+        </div>
+      </div>
 
       {/* بطاقة الفاتورة */}
       <div
         style={{
           borderRadius: "14px",
           border: "1px solid #e5e7eb",
-          padding: "10px 12px",
-          background: "#f9fafb",
+          padding: "10px",
+          backgroundColor: "#ffffff",
         }}
       >
         <h2
           style={{
-            marginTop: 0,
-            marginBottom: "6px",
             fontSize: "18px",
+            marginTop: 0,
+            marginBottom: "4px",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
           }}
         >
-          🛒 واجهة المبيعات
+          واجهة المبيعات 🛒
         </h2>
-        <p style={{ fontSize: "13px", color: "#6b7280", marginTop: 0 }}>
-          شاشة مبسطة لكتابة فاتورة المبيعات اليومية. لاحقاً نربطها بطباعة
-          الفاتورة والباركود الحراري وكل التفاصيل.
+        <p
+          style={{
+            fontSize: "12px",
+            color: "#6b7280",
+            marginTop: 0,
+            marginBottom: "10px",
+          }}
+        >
+          شاشة مبسّطة لكتابة فاتورة المبيعات اليومية. لاحقًا نربطها بطباعة
+          الفاتورة الحرارية والباركود.
         </p>
 
         {/* رأس الفاتورة */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))",
-            gap: "8px",
-            marginBottom: "8px",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "6px",
+            marginBottom: "10px",
           }}
         >
           <div>
-            <label style={{ fontSize: "13px" }}>رقم الفاتورة</label>
+            <label style={{ fontSize: "12px" }}>رقم الفاتورة</label>
             <input
-              type="text"
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                fontSize: "14px",
+              }}
               value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(Number(e.target.value) || 1)}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: "12px" }}>التاريخ</label>
+            <input
+              style={{
+                width: "100%",
+                padding: "6px",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                fontSize: "14px",
+              }}
+              value={formatDateTime(invoiceDate)}
               readOnly
-              style={{
-                width: "100%",
-                padding: "6px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                background: "#f3f4f6",
-              }}
             />
           </div>
           <div>
-            <label style={{ fontSize: "13px" }}>التاريخ</label>
+            <label style={{ fontSize: "12px" }}>الفرع</label>
             <input
-              type="date"
-              value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.target.value)}
               style={{
                 width: "100%",
                 padding: "6px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                fontSize: "14px",
               }}
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
             />
           </div>
           <div>
-            <label style={{ fontSize: "13px" }}>الفرع</label>
+            <label style={{ fontSize: "12px" }}>العميل</label>
             <input
-              type="text"
-              value={branchName}
-              onChange={(e) => setBranchName(e.target.value)}
               style={{
                 width: "100%",
                 padding: "6px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                border: "1px solid #e5e7eb",
+                fontSize: "14px",
               }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: "13px" }}>العميل</label>
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "6px",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-              }}
+              value={customer}
+              onChange={(e) => setCustomer(e.target.value)}
             />
           </div>
         </div>
@@ -540,172 +449,206 @@ export default function SalesPage({ currentUser }) {
         <div
           style={{
             borderRadius: "10px",
-            padding: "8px",
-            background: "#ffffff",
             border: "1px solid #e5e7eb",
+            padding: "8px",
             marginBottom: "10px",
           }}
         >
-          <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: 4 }}>
-            💰 طريقة الدفع
-          </div>
+          <div style={{ fontSize: "13px", marginBottom: "6px" }}>طريقة الدفع 💰</div>
           <div
             style={{
               display: "flex",
               flexWrap: "wrap",
-              gap: "10px",
+              gap: "12px",
+              fontSize: "13px",
               alignItems: "center",
             }}
           >
-            <label>
+            <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <input
                 type="radio"
-                value="cash"
-                checked={paymentType === "cash"}
-                onChange={(e) => setPaymentType(e.target.value)}
-              />{" "}
-              نقدي (يذهب لصندوق المحل الرئيسي)
+                name="payType"
+                checked={paymentType === PAYMENT_TYPES.CASH}
+                onChange={() => setPaymentType(PAYMENT_TYPES.CASH)}
+              />
+              نقدي
             </label>
-            <label>
+            <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <input
                 type="radio"
-                value="network"
-                checked={paymentType === "network"}
-                onChange={(e) => setPaymentType(e.target.value)}
-              />{" "}
+                name="payType"
+                checked={paymentType === PAYMENT_TYPES.CARD}
+                onChange={() => setPaymentType(PAYMENT_TYPES.CARD)}
+              />
               شبكة
             </label>
-            <label>
+            <label style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <input
                 type="radio"
-                value="split"
-                checked={paymentType === "split"}
-                onChange={(e) => setPaymentType(e.target.value)}
-              />{" "}
-              شبكة + نقدي
+                name="payType"
+                checked={paymentType === PAYMENT_TYPES.MIXED}
+                onChange={() => setPaymentType(PAYMENT_TYPES.MIXED)}
+              />
+              نقدي + شبكة
             </label>
           </div>
 
-          {/* اختيار الشبكة */}
-          {(paymentType === "network" || paymentType === "split") && (
-            <div style={{ marginTop: "6px" }}>
-              <label style={{ fontSize: "13px" }}>اختر الشبكة</label>
-              <select
-                value={selectedNetwork}
-                onChange={(e) => setSelectedNetwork(e.target.value)}
+          {(paymentType === PAYMENT_TYPES.CARD ||
+            paymentType === PAYMENT_TYPES.MIXED) && (
+            <div style={{ marginTop: "8px" }}>
+              <label style={{ fontSize: "12px" }}>اختر الشبكة</label>
+              <div
                 style={{
-                  width: "100%",
-                  padding: "6px",
-                  borderRadius: "6px",
-                  border: "1px solid #d1d5db",
-                  marginTop: "2px",
+                  display: "flex",
+                  gap: "6px",
+                  alignItems: "center",
+                  marginTop: "4px",
                 }}
               >
-                {networks.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name}
-                  </option>
-                ))}
-              </select>
+                <select
+                  style={{
+                    flex: 1,
+                    padding: "6px",
+                    borderRadius: "8px",
+                    border: "1px solid #e5e7eb",
+                  }}
+                  value={selectedNetworkId}
+                  onChange={(e) => setSelectedNetworkId(Number(e.target.value))}
+                >
+                  {networks.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddNetwork}
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: "8px",
+                    border: "1px solid #e5e7eb",
+                    backgroundColor: "#f9fafb",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                  }}
+                >
+                  ➕ شبكة
+                </button>
+              </div>
+              {isAdmin && networks.length > 0 && (
+                <div style={{ marginTop: "4px", fontSize: "11px" }}>
+                  لحذف شبكة محددة اختاريها ثم اضغطي
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNetwork(selectedNetworkId)}
+                    style={{
+                      marginRight: "6px",
+                      padding: "2px 6px",
+                      borderRadius: "6px",
+                      border: "1px solid #fecaca",
+                      backgroundColor: "#fee2e2",
+                      cursor: "pointer",
+                      fontSize: "11px",
+                    }}
+                  >
+                    حذف الشبكة الحالية
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* تقسيم المبلغ في حالة split */}
-          {paymentType === "split" && (
+          {paymentType === PAYMENT_TYPES.MIXED && (
             <div
               style={{
+                marginTop: "8px",
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))",
-                gap: "8px",
-                marginTop: "6px",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "6px",
               }}
             >
               <div>
-                <label style={{ fontSize: "13px" }}>مبلغ الكاش</label>
+                <label style={{ fontSize: "12px" }}>مبلغ نقدي</label>
                 <input
                   type="number"
-                  value={splitCash}
-                  onChange={(e) => setSplitCash(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "6px",
-                    borderRadius: "6px",
-                    border: "1px solid #d1d5db",
+                    borderRadius: "8px",
+                    border: "1px solid #e5e7eb",
                   }}
+                  value={cashAmount}
+                  onChange={(e) => setCashAmount(e.target.value)}
                 />
               </div>
               <div>
-                <label style={{ fontSize: "13px" }}>مبلغ الشبكة</label>
+                <label style={{ fontSize: "12px" }}>مبلغ شبكة</label>
                 <input
                   type="number"
-                  value={splitCard}
-                  onChange={(e) => setSplitCard(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "6px",
-                    borderRadius: "6px",
-                    border: "1px solid #d1d5db",
+                    borderRadius: "8px",
+                    border: "1px solid #e5e7eb",
                   }}
+                  value={cardAmount}
+                  onChange={(e) => setCardAmount(e.target.value)}
                 />
               </div>
             </div>
           )}
         </div>
 
-        {/* جدول الأصناف */}
+        {/* أصناف الفاتورة */}
         <div
           style={{
             borderRadius: "10px",
-            padding: "8px",
-            background: "#ffffff",
             border: "1px solid #e5e7eb",
+            padding: "8px",
           }}
         >
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
+              alignItems: "center",
               marginBottom: "6px",
             }}
           >
-            <div style={{ fontSize: "14px", fontWeight: 600 }}>
-              🧾 أصناف الفاتورة
-            </div>
+            <div style={{ fontSize: "14px" }}>أصناف الفاتورة 🧾</div>
             <button
               type="button"
-              onClick={handleAddRow}
+              onClick={handleAddEmptyRow}
               style={{
                 padding: "4px 10px",
                 borderRadius: "8px",
                 border: "none",
-                background: "#4f46e5",
+                backgroundColor: "#2563eb",
                 color: "#ffffff",
+                fontSize: "12px",
                 cursor: "pointer",
-                fontSize: "13px",
               }}
             >
               ➕ إضافة سطر
             </button>
           </div>
 
-          <div style={{ overflowX: "auto" }}>
+          <div
+            style={{
+              overflowX: "auto",
+            }}
+          >
             <table
               style={{
                 width: "100%",
-                minWidth: "600px",
                 borderCollapse: "collapse",
-                fontSize: "13px",
+                fontSize: "12px",
               }}
             >
               <thead>
-                <tr style={{ background: "#f3f4f6" }}>
-                  <th
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      padding: "4px",
-                      width: "30px",
-                    }}
-                  >
+                <tr style={{ backgroundColor: "#f9fafb" }}>
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                     #
                   </th>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
@@ -718,40 +661,18 @@ export default function SalesPage({ currentUser }) {
                     الكمية
                   </th>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    سعر الوحدة (شامل ضريبة)
+                    سعر الوحدة (شامل)
                   </th>
                   <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                     الإجمالي
                   </th>
-                  <th
-                    style={{
-                      border: "1px solid #e5e7eb",
-                      padding: "4px",
-                      width: "50px",
-                    }}
-                  >
+                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                     حذف
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {invoiceItems.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={7}
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        padding: "8px",
-                        textAlign: "center",
-                        color: "#6b7280",
-                      }}
-                    >
-                      لم تتم إضافة أصناف بعد.
-                    </td>
-                  </tr>
-                )}
-
-                {invoiceItems.map((row, index) => (
+                {items.map((row, idx) => (
                   <tr key={row.id}>
                     <td
                       style={{
@@ -760,41 +681,35 @@ export default function SalesPage({ currentUser }) {
                         textAlign: "center",
                       }}
                     >
-                      {index + 1}
+                      {idx + 1}
                     </td>
                     <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                      <select
-                        value={row.itemId}
-                        onChange={(e) =>
-                          handleItemChange(row.id, e.target.value)
-                        }
+                      <input
                         style={{
                           width: "100%",
-                          padding: "4px",
-                          borderRadius: "6px",
-                          border: "1px solid #d1d5db",
+                          border: "none",
+                          outline: "none",
+                          fontSize: "12px",
                         }}
-                      >
-                        <option value="">اختر صنفاً من المخزون</option>
-                        {inventoryItems.map((it) => (
-                          <option key={it.id} value={it.id}>
-                            {it.name}
-                          </option>
-                        ))}
-                      </select>
+                        value={row.name}
+                        onChange={(e) =>
+                          handleRowFieldChange(row.id, "name", e.target.value)
+                        }
+                        placeholder="اسم الصنف"
+                      />
                     </td>
                     <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                       <select
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          outline: "none",
+                          fontSize: "12px",
+                        }}
                         value={row.unit}
                         onChange={(e) =>
                           handleRowFieldChange(row.id, "unit", e.target.value)
                         }
-                        style={{
-                          width: "100%",
-                          padding: "4px",
-                          borderRadius: "6px",
-                          border: "1px solid #d1d5db",
-                        }}
                       >
                         <option value="حبة">حبة</option>
                         <option value="كرتون">كرتون</option>
@@ -805,21 +720,27 @@ export default function SalesPage({ currentUser }) {
                     <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                       <input
                         type="number"
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          outline: "none",
+                          fontSize: "12px",
+                        }}
                         value={row.qty}
                         onChange={(e) =>
                           handleRowFieldChange(row.id, "qty", e.target.value)
                         }
-                        style={{
-                          width: "100%",
-                          padding: "4px",
-                          borderRadius: "6px",
-                          border: "1px solid #d1d5db",
-                        }}
                       />
                     </td>
                     <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
                       <input
                         type="number"
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          outline: "none",
+                          fontSize: "12px",
+                        }}
                         value={row.unitPrice}
                         onChange={(e) =>
                           handleRowFieldChange(
@@ -828,12 +749,6 @@ export default function SalesPage({ currentUser }) {
                             e.target.value
                           )
                         }
-                        style={{
-                          width: "100%",
-                          padding: "4px",
-                          borderRadius: "6px",
-                          border: "1px solid #d1d5db",
-                        }}
                       />
                     </td>
                     <td
@@ -843,7 +758,7 @@ export default function SalesPage({ currentUser }) {
                         textAlign: "center",
                       }}
                     >
-                      {formatCurrency(row.total)} ريال
+                      {calcRowTotal(row).toFixed(2)}
                     </td>
                     <td
                       style={{
@@ -854,63 +769,155 @@ export default function SalesPage({ currentUser }) {
                     >
                       <button
                         type="button"
-                        onClick={() => handleRemoveRow(row.id)}
+                        onClick={() => handleDeleteRow(row.id)}
                         style={{
-                          padding: "3px 6px",
+                          padding: "2px 6px",
                           borderRadius: "6px",
-                          border: "none",
-                          background: "#fee2e2",
-                          color: "#b91c1c",
+                          border: "1px solid #fecaca",
+                          backgroundColor: "#fee2e2",
                           cursor: "pointer",
-                          fontSize: "12px",
+                          fontSize: "11px",
                         }}
                       >
-                        ✖
+                        ×
                       </button>
                     </td>
                   </tr>
                 ))}
+
+                {items.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="7"
+                      style={{
+                        border: "1px solid #e5e7eb",
+                        padding: "8px",
+                        textAlign: "center",
+                        fontSize: "12px",
+                        color: "#6b7280",
+                      }}
+                    >
+                      لم تتم إضافة أصناف بعد.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          {/* إجمالي الفاتورة + حفظ */}
+          {/* إجمالي الفاتورة + أزرار الحفظ */}
           <div
             style={{
-              marginTop: "8px",
+              marginTop: "10px",
               display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "8px",
+              flexDirection: "column",
+              gap: "6px",
             }}
           >
-            <div style={{ fontSize: "14px", fontWeight: 600 }}>
+            <div style={{ fontSize: "14px", textAlign: "left" }}>
               إجمالي الفاتورة:{" "}
-              <span style={{ color: "#16a34a" }}>
-                {formatCurrency(invoiceTotal)} ريال
+              <span style={{ color: "#16a34a", fontWeight: 700 }}>
+                {total.toFixed(2)} ريال
               </span>
             </div>
-            <button
-              type="button"
-              onClick={handleSaveInvoice}
+
+            <div
               style={{
-                padding: "6px 16px",
-                borderRadius: "10px",
-                border: "none",
-                background:
-                  "linear-gradient(135deg, rgba(37,99,235,1), rgba(59,130,246,1))",
-                color: "#ffffff",
-                cursor: "pointer",
-                fontSize: "14px",
-                fontWeight: 600,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "6px",
+                justifyContent: "flex-start",
               }}
             >
-              💾 حفظ الفاتورة (مؤقت)
-            </button>
+              <button
+                type="button"
+                onClick={() => handleSaveInvoice(false)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: "#2563eb",
+                  color: "#ffffff",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                💾 حفظ الفاتورة (بدون طباعة)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveInvoice(true)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  border: "none",
+                  backgroundColor: "#16a34a",
+                  color: "#ffffff",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+              >
+                🖨 حفظ + طباعة
+              </button>
+            </div>
+
+            {savedInvoices.length > 0 && (
+              <div
+                style={{
+                  marginTop: "6px",
+                  paddingTop: "6px",
+                  borderTop: "1px dashed #e5e7eb",
+                  fontSize: "11px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span>التنقل بين الفواتير المحفوظة:</span>
+                <button
+                  type="button"
+                  onClick={handlePrevInvoice}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "6px",
+                    border: "1px solid #e5e7eb",
+                    backgroundColor: "#f9fafb",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                  }}
+                >
+                  ◀ السابقة
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextInvoice}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "6px",
+                    border: "1px solid #e5e7eb",
+                    backgroundColor: "#f9fafb",
+                    cursor: "pointer",
+                    fontSize: "11px",
+                  }}
+                >
+                  التالية ▶
+                </button>
+                {currentInvoiceIndex !== null &&
+                  currentInvoiceIndex >= 0 &&
+                  currentInvoiceIndex < savedInvoices.length && (
+                    <span>
+                      (حالياً تعرضين فاتورة رقم{" "}
+                      {savedInvoices[currentInvoiceIndex].number})
+                    </span>
+                  )}
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+export default SalesPage;
