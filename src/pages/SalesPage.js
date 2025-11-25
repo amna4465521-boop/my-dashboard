@@ -1,18 +1,17 @@
 // src/pages/SalesPage.js
 import React, { useState, useEffect } from "react";
 
-const DEFAULT_CUSTOMER = "عميل المحل تجزئة";
-
 const PAYMENT_TYPES = {
   CASH: "cash",
   CARD: "card",
   MIXED: "mixed",
 };
 
+// تنسيق التاريخ والوقت بالإنجليزي مع الثواني
 function formatDateTime(date) {
-  return date.toLocaleString("ar-SA", {
+  return new Date(date).toLocaleString("en-GB", {
     year: "numeric",
-    month: "short",
+    month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
@@ -20,42 +19,75 @@ function formatDateTime(date) {
   });
 }
 
+// نموذج صف فاضي (مربع صنف)
+function makeEmptyRow(index) {
+  return {
+    id: index, // 1..5
+    itemCode: "",
+    name: "",
+    unit: "حبة",
+    qty: "",
+    unitPrice: "",
+  };
+}
+
 function SalesPage({ currentUser }) {
-  // بيانات الفاتورة
+  const isAdmin = currentUser?.role === "admin";
+
+  // معلومات الفاتورة
   const [invoiceNumber, setInvoiceNumber] = useState(1);
   const [invoiceDate, setInvoiceDate] = useState(new Date());
   const [branch, setBranch] = useState("فرع الرياض");
-  const [customer, setCustomer] = useState(DEFAULT_CUSTOMER);
-
-  // أصناف الفاتورة
-  const [items, setItems] = useState([]);
+  const [customer, setCustomer] = useState("عميل المحل تجزئة");
 
   // طريقة الدفع
   const [paymentType, setPaymentType] = useState(PAYMENT_TYPES.CASH);
   const [cashAmount, setCashAmount] = useState("");
   const [cardAmount, setCardAmount] = useState("");
+
+  // الشبكات
   const [networks, setNetworks] = useState([]);
   const [selectedNetworkId, setSelectedNetworkId] = useState("");
 
-  // فواتير محفوظة محليًا + مؤشر للتنقل بينها
+  // المخزون (للربط مع الباركود/الكود)
+  const [inventoryItems, setInventoryItems] = useState([]);
+
+  // الفواتير المحفوظة (للحسابات وملخص اليوم)
   const [savedInvoices, setSavedInvoices] = useState([]);
   const [currentInvoiceIndex, setCurrentInvoiceIndex] = useState(null);
 
-  const isAdmin = currentUser?.role === "admin";
+  // ٥ مربعات أصناف جاهزة
+  const [rows, setRows] = useState(() =>
+    Array.from({ length: 5 }).map((_, idx) => makeEmptyRow(idx + 1))
+  );
 
-  // تحميل الشبكات والفواتير من localStorage
+  // تحميل المخزون من localStorage
+  useEffect(() => {
+    const savedInv = localStorage.getItem("inventory_items");
+    if (savedInv) {
+      try {
+        setInventoryItems(JSON.parse(savedInv));
+      } catch (e) {
+        console.error("خطأ في قراءة المخزون", e);
+      }
+    }
+  }, []);
+
+  // تحميل الشبكات + الفواتير + رقم الفاتورة
   useEffect(() => {
     const storedNetworks = localStorage.getItem("pos_networks");
     if (storedNetworks) {
       try {
         const parsed = JSON.parse(storedNetworks);
         setNetworks(parsed);
-        if (parsed.length > 0) setSelectedNetworkId(parsed[0].id);
+        if (parsed.length > 0) {
+          setSelectedNetworkId(parsed[0].id);
+        }
       } catch (e) {
         console.error("خطأ في قراءة الشبكات", e);
       }
     } else {
-      // شبكة افتراضية
+      // شبكة افتراضية واحدة
       const defaultNet = [{ id: 1, name: "مدى" }];
       setNetworks(defaultNet);
       setSelectedNetworkId(1);
@@ -76,39 +108,39 @@ function SalesPage({ currentUser }) {
     }
   }, []);
 
+  // كل ما تغير رقم الفاتورة نحدّث الوقت
   useEffect(() => {
-    // تحديث الوقت تلقائيًا كل ما تفتح الفاتورة
     setInvoiceDate(new Date());
   }, [invoiceNumber]);
 
+  // حفظ الفواتير في التخزين
   const saveInvoicesToStorage = (list) => {
     localStorage.setItem("sales_invoices_v1", JSON.stringify(list));
   };
 
-  // ====== حسابات سريعة ======
-
+  // حساب إجمالي سطر
   const calcRowTotal = (row) => {
     const qty = Number(row.qty) || 0;
     const price = Number(row.unitPrice) || 0;
     return qty * price;
   };
 
+  // إجمالي الفاتورة
   const calcInvoiceTotal = () => {
-    return items.reduce((sum, row) => sum + calcRowTotal(row), 0);
+    return rows.reduce((sum, row) => sum + calcRowTotal(row), 0);
   };
 
-  // ملخص اليوم (للكروت اللي فوق مثل الميزان)
+  const total = calcInvoiceTotal();
+
+  // ملخص اليوم (مبيعات اليوم/كاش/شبكة/عدد فواتير)
   const todayKey = new Date().toISOString().slice(0, 10);
-  const visibleInvoicesForUser = savedInvoices.filter((inv) => {
+  const todayInvoices = savedInvoices.filter((inv) => {
     if (!inv.date) return false;
     const d = inv.date.slice(0, 10);
-    if (d !== todayKey) return false;
-    // لو سوينا لاحقًا إخفاء عن موظفين نفلتر هنا
-    if (inv.hiddenFromEmployees && !isAdmin) return false;
-    return true;
+    return d === todayKey;
   });
 
-  const todayTotals = visibleInvoicesForUser.reduce(
+  const todayTotals = todayInvoices.reduce(
     (acc, inv) => {
       acc.count += 1;
       acc.total += inv.total || 0;
@@ -119,38 +151,47 @@ function SalesPage({ currentUser }) {
     { count: 0, total: 0, cash: 0, card: 0 }
   );
 
-  // ====== إدارة الأصناف ======
-
-  const handleAddEmptyRow = () => {
-    setItems((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        name: "",
-        unit: "حبة",
-        qty: 1,
-        unitPrice: "",
-      },
-    ]);
-  };
-
-  const handleRowFieldChange = (rowId, field, value) => {
-    setItems((prev) =>
+  // تغيير قيمة حقل في صف
+  const updateRowField = (rowId, field, value) => {
+    setRows((prev) =>
       prev.map((row) => {
         if (row.id !== rowId) return row;
         const updated = { ...row, [field]: value };
+
+        // لو غيّرنا الكود/الباركود → نحاول نجيب الصنف تلقائي
+        if (field === "itemCode") {
+          const codeVal = value.trim();
+          if (codeVal && inventoryItems.length > 0) {
+            const found =
+              inventoryItems.find((it) => String(it.barcode) === codeVal) ||
+              inventoryItems.find((it) => String(it.code) === codeVal);
+            if (found) {
+              updated.name = found.name || updated.name;
+              if (found.priceWithTax) {
+                updated.unitPrice = found.priceWithTax.toString();
+              }
+            }
+          }
+        }
+
         return updated;
       })
     );
   };
 
-  const handleDeleteRow = (rowId) => {
-    setItems((prev) => prev.filter((row) => row.id !== rowId));
+  // إعادة صف إلى حالة فاضية (بدل حذفه فعليًا)
+  const clearRow = (rowId) => {
+    setRows((prev) =>
+      prev.map((row) => (row.id === rowId ? makeEmptyRow(rowId) : row))
+    );
   };
 
-  // ====== إدارة الشبكات ======
-
+  // إدارة الشبكات (إضافة/حذف → أدمن فقط)
   const handleAddNetwork = () => {
+    if (!isAdmin) {
+      window.alert("فقط المدير يمكنه إضافة شبكة جديدة.");
+      return;
+    }
     const name = window.prompt("أدخل اسم الشبكة (مثال: مدى 2):");
     if (!name) return;
     const id = Date.now();
@@ -160,26 +201,42 @@ function SalesPage({ currentUser }) {
     setSelectedNetworkId(id);
   };
 
-  const handleDeleteNetwork = (id) => {
+  const handleDeleteNetwork = () => {
+    if (!isAdmin) {
+      window.alert("فقط المدير يمكنه حذف الشبكة.");
+      return;
+    }
+    if (!selectedNetworkId) return;
     if (!window.confirm("هل أنت متأكد من حذف هذه الشبكة؟")) return;
-    const newList = networks.filter((n) => n.id !== id);
+
+    const newList = networks.filter((n) => n.id !== selectedNetworkId);
     setNetworks(newList);
     localStorage.setItem("pos_networks", JSON.stringify(newList));
-    if (selectedNetworkId === id && newList.length > 0) {
+    if (newList.length > 0) {
       setSelectedNetworkId(newList[0].id);
+    } else {
+      setSelectedNetworkId("");
     }
   };
 
-  // ====== حفظ الفاتورة ======
-
+  // حفظ الفاتورة
   const handleSaveInvoice = (printAfter = false) => {
-    if (items.length === 0) {
-      window.alert("لم يتم إضافة أصناف للفاتورة.");
+    // نفلتر الصفوف اللي فيها بيانات فعلًا
+    const usedRows = rows.filter(
+      (r) =>
+        r.name.trim() ||
+        r.itemCode.trim() ||
+        (r.qty && Number(r.qty) > 0) ||
+        (r.unitPrice && Number(r.unitPrice) > 0)
+    );
+
+    if (usedRows.length === 0) {
+      window.alert("لم يتم إدخال أي صنف في الفاتورة.");
       return;
     }
 
-    const total = calcInvoiceTotal();
-    if (total <= 0) {
+    const totalAmount = calcInvoiceTotal();
+    if (totalAmount <= 0) {
       window.alert("إجمالي الفاتورة يجب أن يكون أكبر من صفر.");
       return;
     }
@@ -188,13 +245,13 @@ function SalesPage({ currentUser }) {
     let finalCard = 0;
 
     if (paymentType === PAYMENT_TYPES.CASH) {
-      finalCash = total;
+      finalCash = totalAmount;
     } else if (paymentType === PAYMENT_TYPES.CARD) {
-      finalCard = total;
+      finalCard = totalAmount;
     } else if (paymentType === PAYMENT_TYPES.MIXED) {
       const c = Number(cashAmount) || 0;
       const k = Number(cardAmount) || 0;
-      if (Math.abs(c + k - total) > 0.01) {
+      if (Math.abs(c + k - totalAmount) > 0.01) {
         window.alert("مجموع النقدي + الشبكة يجب أن يساوي إجمالي الفاتورة.");
         return;
       }
@@ -205,10 +262,10 @@ function SalesPage({ currentUser }) {
     const invoiceObj = {
       id: Date.now(),
       number: invoiceNumber,
-      date: invoiceDate.toISOString(),
+      date: new Date(invoiceDate).toISOString(),
       branch,
       customer,
-      items,
+      total: totalAmount,
       paymentType,
       cashAmount: finalCash,
       cardAmount: finalCard,
@@ -217,9 +274,15 @@ function SalesPage({ currentUser }) {
         paymentType === PAYMENT_TYPES.MIXED
           ? selectedNetworkId
           : null,
-      total,
       createdBy: currentUser?.username || null,
-      hiddenFromEmployees: false, // ممكن نستخدمها لاحقًا
+      items: usedRows.map((r) => ({
+        itemCode: r.itemCode,
+        name: r.name,
+        unit: r.unit,
+        qty: Number(r.qty) || 0,
+        unitPrice: Number(r.unitPrice) || 0,
+        total: calcRowTotal(r),
+      })),
     };
 
     const newList = [...savedInvoices, invoiceObj];
@@ -229,24 +292,23 @@ function SalesPage({ currentUser }) {
 
     // تجهيز فاتورة جديدة
     setInvoiceNumber((prev) => prev + 1);
-    setItems([]);
+    setInvoiceDate(new Date());
+    setRows(Array.from({ length: 5 }).map((_, idx) => makeEmptyRow(idx + 1)));
     setPaymentType(PAYMENT_TYPES.CASH);
     setCashAmount("");
     setCardAmount("");
-    setInvoiceDate(new Date());
 
     if (printAfter) {
-      // مؤقتًا نطبع الصفحة كلها، لاحقًا نخلي قسم الفاتورة فقط للطباعة
+      // لاحقًا نخليها تطبع نموذج ضريبي مبسط
       setTimeout(() => {
         window.print();
       }, 100);
     } else {
-      window.alert("تم حفظ الفاتورة بنجاح (بدون طباعة).");
+      window.alert("تم حفظ الفاتورة بنجاح.");
     }
   };
 
-  // ====== التنقل بين الفواتير المحفوظة (بسيط) ======
-
+  // التنقل بين الفواتير المحفوظة (بسيط)
   const handleLoadInvoiceByIndex = (index) => {
     if (index < 0 || index >= savedInvoices.length) return;
     const inv = savedInvoices[index];
@@ -259,10 +321,14 @@ function SalesPage({ currentUser }) {
     setCashAmount(inv.cashAmount || "");
     setCardAmount(inv.cardAmount || "");
     setSelectedNetworkId(inv.networkId || "");
-    setItems(
-      inv.items.map((row) => ({
-        ...row,
-        id: row.id || Date.now() + Math.random(),
+    setRows(
+      inv.items.map((it, idx) => ({
+        id: idx + 1,
+        itemCode: it.itemCode || "",
+        name: it.name || "",
+        unit: it.unit || "حبة",
+        qty: it.qty?.toString() || "",
+        unitPrice: it.unitPrice?.toString() || "",
       }))
     );
   };
@@ -279,16 +345,14 @@ function SalesPage({ currentUser }) {
     if (newIndex < savedInvoices.length) handleLoadInvoiceByIndex(newIndex);
   };
 
-  const total = calcInvoiceTotal();
-
-  // ====== JSX ======
+  // ========== واجهة المستخدم ==========
   return (
     <div style={{ padding: "8px" }}>
-      {/* كروت ملخص اليوم */}
+      {/* مربعات ملخص اليوم (زي الميزان) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
           gap: "8px",
           marginBottom: "10px",
         }}
@@ -345,7 +409,7 @@ function SalesPage({ currentUser }) {
         </div>
       </div>
 
-      {/* بطاقة الفاتورة */}
+      {/* بطاقة الفاتورة الرئيسية */}
       <div
         style={{
           borderRadius: "14px",
@@ -358,10 +422,10 @@ function SalesPage({ currentUser }) {
           style={{
             fontSize: "18px",
             marginTop: 0,
-            marginBottom: "4px",
+            marginBottom: "6px",
             display: "flex",
             alignItems: "center",
-            gap: "4px",
+            gap: "6px",
           }}
         >
           واجهة المبيعات 🛒
@@ -374,8 +438,8 @@ function SalesPage({ currentUser }) {
             marginBottom: "10px",
           }}
         >
-          شاشة مبسّطة لكتابة فاتورة المبيعات اليومية. لاحقًا نربطها بطباعة
-          الفاتورة الحرارية والباركود.
+          شاشة مبسّطة لكتابة فاتورة المبيعات اليومية. لاحقًا نربطها بالطابعة
+          الحرارية والباركود من الجوال.
         </p>
 
         {/* رأس الفاتورة */}
@@ -398,7 +462,9 @@ function SalesPage({ currentUser }) {
                 fontSize: "14px",
               }}
               value={invoiceNumber}
-              onChange={(e) => setInvoiceNumber(Number(e.target.value) || 1)}
+              onChange={(e) =>
+                setInvoiceNumber(Number(e.target.value) || invoiceNumber)
+              }
             />
           </div>
           <div>
@@ -454,7 +520,9 @@ function SalesPage({ currentUser }) {
             marginBottom: "10px",
           }}
         >
-          <div style={{ fontSize: "13px", marginBottom: "6px" }}>طريقة الدفع 💰</div>
+          <div style={{ fontSize: "13px", marginBottom: "6px" }}>
+            طريقة الدفع 💰
+          </div>
           <div
             style={{
               display: "flex",
@@ -536,20 +604,19 @@ function SalesPage({ currentUser }) {
                   ➕ شبكة
                 </button>
               </div>
-              {isAdmin && networks.length > 0 && (
+              {isAdmin && (
                 <div style={{ marginTop: "4px", fontSize: "11px" }}>
-                  لحذف شبكة محددة اختاريها ثم اضغطي
                   <button
                     type="button"
-                    onClick={() => handleDeleteNetwork(selectedNetworkId)}
+                    onClick={handleDeleteNetwork}
                     style={{
-                      marginRight: "6px",
                       padding: "2px 6px",
                       borderRadius: "6px",
                       border: "1px solid #fecaca",
                       backgroundColor: "#fee2e2",
                       cursor: "pointer",
                       fontSize: "11px",
+                      marginTop: "4px",
                     }}
                   >
                     حذف الشبكة الحالية
@@ -600,7 +667,7 @@ function SalesPage({ currentUser }) {
           )}
         </div>
 
-        {/* أصناف الفاتورة */}
+        {/* مربعات أصناف الفاتورة */}
         <div
           style={{
             borderRadius: "10px",
@@ -610,105 +677,113 @@ function SalesPage({ currentUser }) {
         >
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "6px",
+              fontSize: "14px",
+              marginBottom: "8px",
             }}
           >
-            <div style={{ fontSize: "14px" }}>أصناف الفاتورة 🧾</div>
-            <button
-              type="button"
-              onClick={handleAddEmptyRow}
-              style={{
-                padding: "4px 10px",
-                borderRadius: "8px",
-                border: "none",
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-                fontSize: "12px",
-                cursor: "pointer",
-              }}
-            >
-              ➕ إضافة سطر
-            </button>
+            أصناف الفاتورة 🧾 (٥ مربعات)
           </div>
 
           <div
             style={{
-              overflowX: "auto",
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: "6px",
             }}
           >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "12px",
-              }}
-            >
-              <thead>
-                <tr style={{ backgroundColor: "#f9fafb" }}>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    #
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    الصنف
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    الوحدة
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    الكمية
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    سعر الوحدة (شامل)
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    الإجمالي
-                  </th>
-                  <th style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
-                    حذف
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row, idx) => (
-                  <tr key={row.id}>
-                    <td
+            {rows.map((row) => {
+              const rowTotal = calcRowTotal(row);
+              return (
+                <div
+                  key={row.id}
+                  style={{
+                    borderRadius: "10px",
+                    border: "1px solid #e5e7eb",
+                    padding: "8px",
+                    backgroundColor: "#f9fafb",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "6px",
+                      fontSize: "13px",
+                    }}
+                  >
+                    <span>سطر رقم {row.id}</span>
+                    <button
+                      type="button"
+                      onClick={() => clearRow(row.id)}
                       style={{
-                        border: "1px solid #e5e7eb",
-                        padding: "4px",
-                        textAlign: "center",
+                        padding: "2px 8px",
+                        borderRadius: "6px",
+                        border: "1px solid #fecaca",
+                        backgroundColor: "#fee2e2",
+                        cursor: "pointer",
+                        fontSize: "11px",
                       }}
                     >
-                      {idx + 1}
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                      حذف / تفريغ
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "6px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div>
+                      <label>رقم الصنف (كود/باركود)</label>
                       <input
                         style={{
                           width: "100%",
-                          border: "none",
-                          outline: "none",
+                          padding: "4px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: "12px",
+                        }}
+                        value={row.itemCode}
+                        onChange={(e) =>
+                          updateRowField(row.id, "itemCode", e.target.value)
+                        }
+                        placeholder="اكتبيه أو امسحيه باركود مستقبلاً"
+                      />
+                    </div>
+                    <div>
+                      <label>اسم الصنف</label>
+                      <input
+                        style={{
+                          width: "100%",
+                          padding: "4px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
                           fontSize: "12px",
                         }}
                         value={row.name}
                         onChange={(e) =>
-                          handleRowFieldChange(row.id, "name", e.target.value)
+                          updateRowField(row.id, "name", e.target.value)
                         }
-                        placeholder="اسم الصنف"
+                        placeholder="مثال: معسل تفاحتين"
                       />
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    </div>
+                    <div>
+                      <label>الوحدة</label>
                       <select
                         style={{
                           width: "100%",
-                          border: "none",
-                          outline: "none",
+                          padding: "4px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
                           fontSize: "12px",
                         }}
                         value={row.unit}
                         onChange={(e) =>
-                          handleRowFieldChange(row.id, "unit", e.target.value)
+                          updateRowField(row.id, "unit", e.target.value)
                         }
                       >
                         <option value="حبة">حبة</option>
@@ -716,93 +791,61 @@ function SalesPage({ currentUser }) {
                         <option value="كيس">كيس</option>
                         <option value="شدة">شدة</option>
                       </select>
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    </div>
+                    <div>
+                      <label>الكمية</label>
                       <input
                         type="number"
                         style={{
                           width: "100%",
-                          border: "none",
-                          outline: "none",
+                          padding: "4px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
                           fontSize: "12px",
                         }}
                         value={row.qty}
                         onChange={(e) =>
-                          handleRowFieldChange(row.id, "qty", e.target.value)
+                          updateRowField(row.id, "qty", e.target.value)
                         }
                       />
-                    </td>
-                    <td style={{ border: "1px solid #e5e7eb", padding: "4px" }}>
+                    </div>
+                    <div>
+                      <label>سعر الوحدة (شامل ضريبة)</label>
                       <input
                         type="number"
                         style={{
                           width: "100%",
-                          border: "none",
-                          outline: "none",
+                          padding: "4px",
+                          borderRadius: "6px",
+                          border: "1px solid #e5e7eb",
                           fontSize: "12px",
                         }}
                         value={row.unitPrice}
                         onChange={(e) =>
-                          handleRowFieldChange(
-                            row.id,
-                            "unitPrice",
-                            e.target.value
-                          )
+                          updateRowField(row.id, "unitPrice", e.target.value)
                         }
                       />
-                    </td>
-                    <td
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        padding: "4px",
-                        textAlign: "center",
-                      }}
-                    >
-                      {calcRowTotal(row).toFixed(2)}
-                    </td>
-                    <td
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        padding: "4px",
-                        textAlign: "center",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRow(row.id)}
+                    </div>
+                    <div>
+                      <label>الإجمالي</label>
+                      <div
                         style={{
-                          padding: "2px 6px",
+                          width: "100%",
+                          padding: "4px",
                           borderRadius: "6px",
-                          border: "1px solid #fecaca",
-                          backgroundColor: "#fee2e2",
-                          cursor: "pointer",
-                          fontSize: "11px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: "12px",
+                          backgroundColor: "#e5f9e7",
+                          textAlign: "center",
                         }}
                       >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-
-                {items.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="7"
-                      style={{
-                        border: "1px solid #e5e7eb",
-                        padding: "8px",
-                        textAlign: "center",
-                        fontSize: "12px",
-                        color: "#6b7280",
-                      }}
-                    >
-                      لم تتم إضافة أصناف بعد.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                        {rowTotal.toFixed(2)} ريال
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {/* إجمالي الفاتورة + أزرار الحفظ */}
